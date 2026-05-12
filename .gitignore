@@ -15,8 +15,13 @@ env/
 
 # Data & DB
 data/
+!data/zscore/
+!data/zscore/*.xlsx
 *.db
 *.sqlite3
+
+# Docs — data analysis reference files (large Excel/binary, not source)
+Docs/data analysis_files/
 
 # Frontend
 node_modules/

@@ -94,6 +94,16 @@ backend/
 
 Three tables live after Day 1. Three more planned for Day 5.
 
+### Migration Strategy
+
+| Phase | Approach | Reason |
+|-------|----------|--------|
+| Day 1–4 | `init_db()` idempotent CREATE IF NOT EXISTS | No clients deployed yet, schema stable |
+| Day 5 | Introduce **Alembic** before adding new tables | First schema change that breaks existing client deployments |
+| Day 5+ | All schema changes via Alembic migrations | Clients pull new image → migration runs automatically on startup |
+
+Alembic works with DuckDB directly — no PostgreSQL required. PostgreSQL is not planned unless multi-tenant concurrency becomes a requirement.
+
 ### Current Tables (Day 1)
 
 ```sql

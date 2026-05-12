@@ -5,6 +5,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
+COPY data/zscore/ ./data/zscore/
 
 ENV WHO_ZSCORE_DIR=/app/data/zscore
 ENV SMARTDQC_DB_PATH=/app/data/smartdqc.duckdb

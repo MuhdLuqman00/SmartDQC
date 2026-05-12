@@ -1,10 +1,10 @@
 ﻿services:
   api:
-    build: .
+    image: luqmanzulkefli/smartdqc-api:latest
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
+      - ./data/smartdqc.duckdb:/app/data/smartdqc.duckdb
     environment:
       - WHO_ZSCORE_DIR=/app/data/zscore
       - SMARTDQC_DB_PATH=/app/data/smartdqc.duckdb
