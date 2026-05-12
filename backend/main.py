@@ -13,13 +13,16 @@ import numpy as np
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 from typing import List, Optional
 
 from .config import STANDARD_SCHEMA, auto_suggest_mapping, detect_source_type
 from .eda.runner import run_eda, json_safe
 from .export.tableau import build_aggregated_table, to_excel as tbl_excel, to_csv as tbl_csv
 from .export.cleaned import to_excel as cln_excel, to_csv as cln_csv
-from .db.init_db import init_db
+from .db.init_db import init_db, get_db
+from .ai.narrative import generate_narrative
+from .ai.nlq import answer_query
 
 
 @asynccontextmanager
@@ -1514,3 +1517,54 @@ async def download_report_endpoint(
                 f'attachment; filename="{data_type.upper()}_Data_Quality_Report_{timestamp}.xlsx"'
         },
     )
+
+
+# ─── AI ENDPOINTS ─────────────────────────────────────────────────────────────
+
+class NarrativeRequest(BaseModel):
+    session_id: str
+    eda_result: dict
+
+
+class NLQRequest(BaseModel):
+    session_id: str
+    query: str
+
+
+@app.post("/ai/narrative")
+async def ai_narrative(req: NarrativeRequest):
+    """Generate AI narrative (insights + recommendations) from EDA results."""
+    try:
+        narrative = generate_narrative(req.eda_result)
+    except Exception as e:
+        raise HTTPException(500, f"Narrative generation failed: {e}")
+
+    import uuid
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO analysis_results (id, session_id, result_type, result_json, created_at) VALUES (?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), req.session_id, "narrative", json.dumps(narrative), pd.Timestamp.now()),
+        )
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+    return narrative
+
+
+@app.post("/ai/nlq")
+async def ai_nlq(req: NLQRequest):
+    """Answer a natural language query against the cleaned dataset for a session."""
+    entry = _cleaned_cache.get(req.session_id)
+    if entry is None:
+        raise HTTPException(404, "Session not found in cache — please re-run cleaning first.")
+
+    df = entry["df"]
+    try:
+        result = answer_query(req.query, df)
+    except Exception as e:
+        raise HTTPException(500, f"NLQ failed: {e}")
+
+    return result
