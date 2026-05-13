@@ -31,6 +31,7 @@ from .ai.nlq import answer_query
 from .ml.corrections import flag_anomalies
 from .ml.risk_score import compute_risk_scores
 from .export.report import build_pptx_bytes, build_pdf_bytes
+from .eda.kpi import compute_kpi_dashboard
 
 from datetime import datetime
 from sqlalchemy.orm import Session as SASession
@@ -1210,6 +1211,20 @@ async def risk_score_endpoint(
     if entry is None:
         raise HTTPException(404, "cache_id not found — run /clean/run first or check the UUID")
     result = compute_risk_scores(entry["df"])
+    return JSONResponse(content=json_safe(result))
+
+
+# --- KPI NAMESPACE --------------------------------------------------------------
+
+@app.post("/kpi/dashboard")
+async def kpi_dashboard_endpoint(
+    cache_id: str = Query(..., description="UUID from /clean/run or /join/run"),
+):
+    """Return RAG traffic-light KPI status benchmarked against Malaysian national targets."""
+    entry = _cleaned_cache.get(cache_id)
+    if entry is None:
+        raise HTTPException(404, "cache_id not found — run /clean/run first or check the UUID")
+    result = compute_kpi_dashboard(entry["df"])
     return JSONResponse(content=json_safe(result))
 
 
