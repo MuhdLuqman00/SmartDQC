@@ -159,3 +159,117 @@ Override dropdown lists all 22 STANDARD_SCHEMA fields + "Abaikan" (Ignore).
 - `SourceTypeSelector` — radio group
 - `SchemaMappingTable` — table with dropdowns per row
 - `MappingConfidenceBadge` — coloured % pill
+
+---
+
+## §5 — Explorer Page (`/explorer`)
+
+### Purpose
+Browse raw vs cleaned data side-by-side; inspect EDA statistics per column.
+
+### APIs
+- `POST /eda/run` → `{ cache_id, summary, issues, indicators }`
+- `GET /eda/profile` → column-level stats (mean, std, null_count, unique_count)
+
+### Layout
+- Left panel: column selector list
+- Main area: tabs — Raw Data | Cleaned Data | Profile Stats
+- Raw/Cleaned tabs: paginated DataGrid (50 rows/page)
+- Profile tab: one ColumnProfileCard per column
+
+### Components
+- `DataGrid` — virtual scroll, freeze first column
+- `ColumnProfileCard` — histogram sparkline + stats table
+- `IssueBadge` — red pill, issue count
+
+---
+
+## §6 — Quality Page (`/quality`)
+
+### Purpose
+Quality score breakdown — rule-by-rule pass/fail, issue heatmap, trend.
+
+### APIs
+- `GET /quality/score?cache_id=X` → `{ overall, by_rule: { rule_name: { score, count } } }`
+- `GET /quality/issues?cache_id=X` → `[{ row_index, column, issue_type, value }]`
+- `GET /quality/trend` → `[{ date, score }]` (last 30 sessions)
+
+### Layout
+- Top: Overall score gauge (0–100, navy arc)
+- Left: Rule Breakdown list (rule name, progress bar, issue count)
+- Right: Issue Table (filterable by issue_type)
+- Bottom: Trend LineChart
+
+### Components
+- `ScoreGauge` — SVG arc, colour coded by tier
+- `RuleBreakdownList` — progress bars per rule
+- `IssueTable` — sortable, filterable
+- `TrendLineChart` — recharts, navy stroke
+
+---
+
+## §7 — Cleaning Page (`/cleaning`)
+
+### Purpose
+Review automated cleaning operations; download cleaned output.
+
+### APIs
+- `POST /clean/run` — body: `{ cache_id, column_map }` → `{ rows_before, rows_after, actions_taken, quality_score }`
+- `GET /clean/export?cache_id=X` — streams cleaned CSV
+
+### Cleaning Action Types
+| Code                | Label                              |
+|---------------------|------------------------------------|
+| missing_imputed     | Missing values imputed (median)    |
+| duplicate_removed   | Duplicate rows removed             |
+| outlier_flagged     | Outliers flagged (Z-score > 3)     |
+| ic_corrected        | IC numbers normalised              |
+| decimal_shift_fixed | Decimal shift corrected (×10)      |
+
+### Layout
+- Top: Before/After row count card + quality score delta badge
+- Middle: Cleaning Actions accordion (grouped by action type)
+- Bottom: "Muat Turun CSV" button + "Teruskan ke Laporan" button
+
+### Components
+- `CleaningSummaryCard` — before/after + delta
+- `ActionAccordion` — collapsible per action type
+- `DownloadButton` — GET /clean/export → triggers browser download
+
+---
+
+## §8 — AI Page (`/ai`)
+
+### Purpose
+Natural language query interface for exploratory analysis; returns answer + optional auto-generated chart.
+
+### API
+`POST /nlq/query` — body: `{ question: string, cache_id: string }`
+
+Response:
+```json
+{
+  "answer": "Kadar stunting di Petaling ialah 18.2%",
+  "result": { "Petaling": 0.182 },
+  "code": "df.groupby('district')['stunting'].mean()",
+  "chart_b64": "<base64 PNG or null>"
+}
+```
+
+### Layout
+- Input bar fixed at bottom (full width, Enter to submit)
+- Conversation thread above (scrollable)
+- User bubble: right-aligned, navy background
+- Assistant bubble: left-aligned, light grey
+- If `chart_b64` present: inline PNG rendered below assistant bubble
+
+### Example Queries
+- "Berapa peratus kanak-kanak stunting di Daerah Petaling?"
+- "Tunjukkan 5 daerah dengan kadar wasting tertinggi"
+- "Adakah trend stunting bertambah baik dari 2022 ke 2024?"
+
+### Components
+- `ChatThread` — scrollable message list
+- `MessageBubble` — user vs assistant styling variant
+- `InlineChart` — renders `<img src={chart_b64}>` if present
+- `QueryInput` — textarea + send button
