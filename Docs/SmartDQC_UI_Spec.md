@@ -217,11 +217,12 @@ The palette is anchored in KKM's official website colours (dark navy, medium blu
 - Line/bar charts per indicator over time
 - Filter by state / district / demographic
 - AI narrative below each chart explaining the trend
+- **District Risk Forecast (Feature #11)** — next-quarter predicted risk score per district, derived from historical Z-score OLS trend model. Displayed as a forecast card below the trend chart: district name, current risk tier, predicted next-quarter risk tier, trend direction (improving / worsening / stable). Backend: `POST /risk/forecast`.
 
 **Geo Mapping Tab:**
 - Interactive map of Malaysia
-- Colour-coded by risk level per district/state
-- Click district to see detail panel
+- Colour-coded by risk score per district/state — risk score derived from composite WAZ/HAZ/BAZ/overweight rates via `POST /risk/score`. Four tiers: Low (0–25), Moderate (26–50), High (51–75), Critical (76–100).
+- Click district to see detail panel: current risk score, indicator breakdown, forecast next quarter
 
 **Alerts Tab:**
 - List of active threshold alerts
@@ -272,7 +273,7 @@ The palette is anchored in KKM's official website colours (dark navy, medium blu
 - AI-written executive summary section (editable before export)
 - Export format: PDF / PPTX / Excel
   - **Excel (9-tab quality report)** — available for myVASS and NCDC sources after cleaning; contains Executive Summary, Cleaning Rules, Records Dropped, and WAZ/HAZ/BAZ × Negeri/Daerah pivot tables. For KPM, contains BMI category breakdown instead of z-score tabs.
-- Report follows KKM quarterly reporting format
+- Report follows KKM quarterly reporting format, structured after the **KKM Annual Report 2024, Chapter 4 — Nutrition Division** (confirmed reference template). Key sections: double burden of malnutrition summary, state/district indicator tables, WHO target comparison, methodology appendix.
 
 ---
 
@@ -285,6 +286,8 @@ The palette is anchored in KKM's official website colours (dark navy, medium blu
 
 **Backend:** Feature #13 — Natural Language Querying: user input (BM/English) → LLM → sandboxed pandas execution → answer + auto-generated chart where relevant. (Sandboxed: no arbitrary file system access from NLQ queries.)
 
+**API response shape:** `{ answer: {bm, en}, result, code_used, chart_b64 }` — `chart_b64` is a base64-encoded PNG bar chart (horizontal, KKM Teal `#00697A` bars). Present when result is tabular with at least one numeric column; `null` otherwise. The UI renders this as an inline `<img>` below the text answer.
+
 **Elements:**
 - Chat input field (BM / EN)
 - Message history
@@ -292,7 +295,7 @@ The palette is anchored in KKM's official website colours (dark navy, medium blu
   - "Berapa % stunted di Sabah Q1?"
   - "Tunjukkan trend wasting 2023 vs 2024 bagi Selangor"
   - "Senaraikan daerah yang melebihi ambang underweight nasional"
-- Responses include text + auto-generated charts where relevant
+- Responses include text answer (BM + EN) + inline chart image when `chart_b64` is present
 - Context-aware — knows which dataset is currently loaded
 - Clear conversation button
 - Copy response button
@@ -328,11 +331,16 @@ The palette is anchored in KKM's official website colours (dark navy, medium blu
 - **Compare Selected** button — triggers combined analysis workflow
 - Combined analysis results:
   - Side-by-side quality comparison
-  - Trend deltas (same source, different periods)
-  - Cross-source entity match summary (Feature #14)
+  - Trend deltas (same source, different periods) — shown as percentage-point change per indicator and quality score delta; trend direction: improving / worsening / stable (OLS slope over series)
+  - Cross-source entity match summary (Feature #14) — IC-linked child profiles across datasets, count of linked vs unlinked records
   - AI comparative narrative (BM + English)
 - **Export Comparative Report** button
 - Link to full session detail (→ History log entry)
+
+**Live API (backend ready):**
+- `GET /datasets` — returns `[{id, name, filename, source_type, row_count, created_at}]`
+- `POST /datasets/compare` — body: `{dataset_ids: [id1, id2, ...]}` (oldest first); returns `{datasets, deltas: {quality_score, stunting_rate, wasting_rate, underweight_rate, overweight_rate}, trend: {same keys → "improving"|"worsening"|"stable"}}`
+- `POST /entity/link` — body: `{dataset_ids: [id1, id2]}` (min 2); returns `{total_groups, linked_groups, unlinked, rows_written, profiles}`
 
 ---
 
@@ -421,17 +429,18 @@ Dataset Library
 
 ## 6. Open Items
 
-| # | Item | Blocking |
-|---|------|---------|
-| 1 | Obtain official KKM logo assets — fallback approved: KKM colours + placeholder logo | Day 6 UI |
-| 2 | Confirm language default (BM or EN) and switching behaviour | All pages |
-| 3 | Decide on chatbot placement — floating panel vs dedicated page | §2.11 |
-| 4 | Confirm user roles and permission matrix with client | §2.14 Settings |
-| 5 | Wireframes to be designed separately based on this spec | Design phase |
-| 6 | Traffic-light KPI threshold definitions (On Track / At Risk / Off Track values) | §2.8 Benchmarking |
-| 7 | MOH quarterly report template from client | §2.10 Reports |
-| 8 | Full KKM staff workflow definition for SE acceptance test | Day 6 final test |
-| 9 | Feature count confirmation — 16 documented vs 18 verbal | Product spec |
+| # | Item | Status | Blocking |
+|---|------|--------|---------|
+| 1 | Obtain official KKM logo assets — fallback approved: KKM colours + placeholder logo | Open | Day 6 UI |
+| 2 | Confirm language default (BM or EN) and switching behaviour | Open | All pages |
+| 3 | Decide on chatbot placement — floating panel vs dedicated page | Open | §2.11 |
+| 4 | Confirm user roles and permission matrix with client | Open | §2.14 Settings |
+| 5 | Wireframes to be designed separately based on this spec | Open | Design phase |
+| 6 | Traffic-light KPI threshold definitions (On Track / At Risk / Off Track values) | Open | §2.8 Benchmarking |
+| 7 | MOH quarterly report template from client | ✅ Resolved — KKM Annual Report 2024 Chapter 4 (Nutrition Division) confirmed as reference | §2.10 Reports |
+| 8 | Full KKM staff workflow definition for SE acceptance test | Open | Day 6 final test |
+| 9 | Feature count confirmation — 16 documented vs 18 verbal | ✅ Resolved — 16 features confirmed | Product spec |
+| 10 | 4 existing frontend components (ReportPage, ReportOptionsPanel, ReportPreviewPane, useReportGeneration) use KKM Teal `#00697A` — must be updated to navy palette `#1B2A4A` before Day 6 scaffold is built | Open | Day 6 UI |
 
 ---
 
