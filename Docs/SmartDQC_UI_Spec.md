@@ -131,7 +131,8 @@ Ingest one or two CSV/Excel files, preview detected schema, confirm mapping, tri
 
 ### Layout
 - Tab 1 "Fail Tunggal": drag-drop zone + source type radio (MyVASS / Klinik Kesihatan / Auto-detect)
-- Tab 2 "Gabungkan (2 Fail)": two drop zones side by side
+- Tab 2 "Gabungkan (2 Fail)": two drop zones side by side (identical schema, row union via /upload/merge-preview)
+- Tab 3 "Cantumkan (Join)": two drop zones + join type selector (inner/left/right/outer/union) + key columns input
 - Below: Schema Preview accordion (appears after upload completes)
 
 ### Schema Preview Table
@@ -143,10 +144,10 @@ Ingest one or two CSV/Excel files, preview detected schema, confirm mapping, tri
 Override dropdown lists all 22 STANDARD_SCHEMA fields + "Abaikan" (Ignore).
 
 ### APIs
-- `POST /upload/preview` — body: `{ file_b64, filename, source_type }`
-  Response: `{ cache_id, rows, columns, sample, auto_mapping, ai_suggestions, unmapped_columns }`
-- `POST /upload/merge-preview` — body: `{ file_a_b64, file_b_b64, filename_a, filename_b, source_type }`
-  Response: same shape as above for merged frame
+- `POST /upload/preview` — body: file upload + `source_type` → `{ cache_id, rows, columns, sample, auto_mapping, ai_suggestions, unmapped_columns }`
+- `POST /upload/merge-preview` — body: multiple file uploads → same shape for row-unioned frame
+- `POST /join/preview` — query: `join_type`, `key_cols`, `cache_id_left`, `cache_id_right` → `{ preview, columns, shape, join_stats }`
+- `POST /join/run` — same params as join/preview → `{ cache_id, shape, join_stats }` (result cached for downstream EDA/cleaning)
 
 ### Behaviour
 1. File dropped → base64 encode client-side → POST /upload/preview
@@ -159,6 +160,7 @@ Override dropdown lists all 22 STANDARD_SCHEMA fields + "Abaikan" (Ignore).
 - `SourceTypeSelector` — radio group
 - `SchemaMappingTable` — table with dropdowns per row
 - `MappingConfidenceBadge` — coloured % pill
+- `JoinConfigurator` — join type selector + key column multi-select + preview table
 
 ---
 
@@ -168,14 +170,14 @@ Override dropdown lists all 22 STANDARD_SCHEMA fields + "Abaikan" (Ignore).
 Browse raw vs cleaned data side-by-side; inspect EDA statistics per column.
 
 ### APIs
-- `POST /eda/run` → `{ cache_id, summary, issues, indicators }`
-- `GET /eda/profile` → column-level stats (mean, std, null_count, unique_count)
+- `POST /eda/run` — body: file upload + `data_type` → `{ cache_id, summary, issues, indicators, columns: [{ name, null_count, null_percent, unique_count, min, max, mean, sample_values }] }`
+- `POST /eda/run-merged` — body: merged file + params → same shape, for merged/joined datasets
 
 ### Layout
 - Left panel: column selector list
 - Main area: tabs — Raw Data | Cleaned Data | Profile Stats
 - Raw/Cleaned tabs: paginated DataGrid (50 rows/page)
-- Profile tab: one ColumnProfileCard per column
+- Profile tab: one ColumnProfileCard per column (stats from EDA response)
 
 ### Components
 - `DataGrid` — virtual scroll, freeze first column
@@ -187,24 +189,25 @@ Browse raw vs cleaned data side-by-side; inspect EDA statistics per column.
 ## §6 — Quality Page (`/quality`)
 
 ### Purpose
-Quality score breakdown — rule-by-rule pass/fail, issue heatmap, trend.
+Quality score breakdown — column-level completeness, pre-cleaning analysis, anomaly detection.
 
 ### APIs
-- `GET /quality/score?cache_id=X` → `{ overall, by_rule: { rule_name: { score, count } } }`
-- `GET /quality/issues?cache_id=X` → `[{ row_index, column, issue_type, value }]`
-- `GET /quality/trend` → `[{ date, score }]` (last 30 sessions)
+- `POST /clean/quality-check` — body: file upload + `data_type` → `{ total_rows, total_columns, overall_completeness, columns: [{ name, null_count, null_percent, unique_count, is_numeric, min, max, mean, sample_values }] }`
+- `POST /clean/quality-check-multi` — same as above for multi-file (returns per-file + merged stats)
+- `POST /ml/suggest?cache_id=X` — IsolationForest anomaly detection → `{ anomaly_rows: [{ row_index, reason }], anomaly_rate }`
+- Note: cleaning quality score is returned by `POST /clean/run` in its `quality_score` field
 
 ### Layout
-- Top: Overall score gauge (0–100, navy arc)
-- Left: Rule Breakdown list (rule name, progress bar, issue count)
-- Right: Issue Table (filterable by issue_type)
-- Bottom: Trend LineChart
+- Top: Overall completeness gauge (0–100%, navy arc)
+- Left: Column Breakdown list (null %, unique count, type badge per column)
+- Right: Anomaly panel (anomaly_rate + flagged rows table, populated after /ml/suggest)
+- Bottom: "Jalankan Pembersihan" CTA → /cleaning
 
 ### Components
-- `ScoreGauge` — SVG arc, colour coded by tier
-- `RuleBreakdownList` — progress bars per rule
+- `ScoreGauge` — SVG arc, colour coded by completeness tier
+- `ColumnBreakdownList` — null %, type badge per column
+- `AnomalyPanel` — anomaly rate badge + flagged rows table
 - `IssueTable` — sortable, filterable
-- `TrendLineChart` — recharts, navy stroke
 
 ---
 
@@ -214,8 +217,10 @@ Quality score breakdown — rule-by-rule pass/fail, issue heatmap, trend.
 Review automated cleaning operations; download cleaned output.
 
 ### APIs
-- `POST /clean/run` — body: `{ cache_id, column_map }` → `{ rows_before, rows_after, actions_taken, quality_score }`
-- `GET /clean/export?cache_id=X` — streams cleaned CSV
+- `POST /clean/run` — body: file upload + `data_type` → `{ cache_id, rows_before, rows_after, actions_taken, quality_score }`
+- `POST /clean/run-multi` — multi-file variant; same response shape
+- `GET /clean/download-cached/{cache_id}` — streams cleaned CSV (GET, no body)
+- `GET /clean/download-report/{cache_id}` — streams 5-tab Excel quality report
 
 ### Cleaning Action Types
 | Code                | Label                              |
@@ -234,7 +239,8 @@ Review automated cleaning operations; download cleaned output.
 ### Components
 - `CleaningSummaryCard` — before/after + delta
 - `ActionAccordion` — collapsible per action type
-- `DownloadButton` — GET /clean/export → triggers browser download
+- `DownloadButton` — GET /clean/download-cached/{cache_id} → CSV download
+- `ReportDownloadButton` — GET /clean/download-report/{cache_id} → Excel quality report
 
 ---
 
@@ -243,8 +249,8 @@ Review automated cleaning operations; download cleaned output.
 ### Purpose
 Natural language query interface for exploratory analysis; returns answer + optional auto-generated chart.
 
-### API
-`POST /nlq/query` — body: `{ question: string, cache_id: string }`
+### APIs
+`POST /ai/nlq` — body: `{ query: string, session_id: string }`
 
 Response:
 ```json
@@ -255,6 +261,10 @@ Response:
   "chart_b64": "<base64 PNG or null>"
 }
 ```
+
+`POST /ai/narrative` — body: `{ eda_result: object, session_id: string }`
+
+Response: `{ insights: string[], recommendations: string[], summary: string }` (persisted to `analysis_results` table)
 
 ### Layout
 - Input bar fixed at bottom (full width, Enter to submit)
@@ -273,6 +283,7 @@ Response:
 - `MessageBubble` — user vs assistant styling variant
 - `InlineChart` — renders `<img src={chart_b64}>` if present
 - `QueryInput` — textarea + send button
+- `NarrativePanel` — collapsed accordion showing AI insights + recommendations (populated via /ai/narrative)
 
 ---
 
@@ -282,8 +293,10 @@ Response:
 District-level choropleth of nutrition indicators + risk score tiers + next-quarter forecast.
 
 ### APIs
-- `GET /kpi/dashboard` → `{ districts: [{ name, stunting_rate, wasting_rate, risk_score, trend }] }`
-- `GET /kpi/forecast?district=X` → `{ district, forecast_quarter, predicted_stunting, confidence_interval }`
+- `POST /kpi/dashboard?cache_id=X` → `{ districts: [{ name, stunting_rate, wasting_rate, underweight_rate, overweight_rate, risk_rag, vs_target }] }` (RAG traffic-light vs Malaysian national targets)
+- `POST /kpi/trajectory` — body: `{ historical_snapshots: [...], current_breakdown: [...] }` → per-district trajectory narratives and 2027 target forecast
+- `POST /risk/score?cache_id=X` → `{ per_child: [{ ic, risk_score, risk_tier }], district_aggregation: { district: { avg_score, high_risk_count } } }`
+- `POST /risk/forecast` — body: `{ records: [...] }` → next-quarter district risk forecast
 
 ### Risk Score Tiers
 | Score | Tier        | Colour |
@@ -299,8 +312,9 @@ District-level choropleth of nutrition indicators + risk score tiers + next-quar
 
 ### Components
 - `MalaysiaChoropleth` — SVG map, district fill by rate
-- `DistrictKpiPanel` — 4 metric cards + trend arrows
+- `DistrictKpiPanel` — 4 metric cards + trend arrows + RAG badges
 - `ForecastCard` — predicted value + CI + tier badge
+- `RiskScoreTable` — per-district high-risk count + avg score (from /risk/score)
 
 ---
 
@@ -344,8 +358,8 @@ Compare 2+ historical dataset summaries side-by-side; view indicator deltas and 
 
 ### APIs
 - `GET /datasets` → `[{ id, cache_id, filename, source_type, row_count, quality_score, created_at }]`
-- `POST /datasets/compare` — body: `{ dataset_ids: int[] }`
-  Response: `{ datasets, deltas: { stunting_rate: -2.1, ... }, trend: { stunting_rate: "improving" } }`
+- `POST /datasets/compare` — body: `{ dataset_ids: int[] }` → `{ datasets, deltas: { stunting_rate: -2.1, ... }, trend: { stunting_rate: "improving" } }`
+- `POST /entity/link` — body: `{ dataset_ids: int[] }` → `{ total_groups, linked_groups, unlinked, rows_written, profiles: [{ ic, sources: [...] }] }` (links child records across datasets by IC number)
 
 ### Delta Display
 - `+X.Xpp` red — worsening indicator (rate increased)
@@ -361,6 +375,7 @@ Compare 2+ historical dataset summaries side-by-side; view indicator deltas and 
 - `DatasetSelector` — checkbox list
 - `ComparisonTable` — indicator rows, dataset columns, delta column
 - `TrendBadge` — coloured arrow badge
+- `EntityLinkPanel` — "Pautan Rekod" button → POST /entity/link → linked profiles accordion (IC + source list)
 
 ---
 
