@@ -58,3 +58,35 @@ All API calls use `VITE_API_BASE_URL` env var (default `http://localhost:8000`).
 
 ### Auth
 JWT stored in `localStorage` as `smartdqc_token`. Sent as `Authorization: Bearer <token>` header. Expiry: 8 hours. On 401 response: clear token and redirect to `/login`.
+
+---
+
+## §2 — Login Page (`/login`)
+
+### Purpose
+Authenticate user, obtain JWT, redirect to `/`.
+
+### Layout
+- Centered card (480px wide)
+- Navy left panel: KKM logo + product name "SmartDQC"
+- Right panel: username input, password input, "Masuk" button
+- Error banner: danger red background if 401 returned
+
+### API
+`POST /auth/login` — form-encoded `username` + `password`
+
+Response:
+```json
+{ "access_token": "ey...", "token_type": "bearer", "role": "admin" }
+```
+
+### Behaviour
+1. On submit: POST to `/auth/login`
+2. Store `access_token` in `localStorage["smartdqc_token"]`
+3. On success: navigate to `/`
+4. On 401: show "Nama pengguna atau kata laluan tidak sah" error banner
+5. Default dev credentials: `admin` / `ADMIN_SEED_PASSWORD_PLACEHOLDER`
+
+### Components
+- `LoginCard` — centered form wrapper
+- `useAuth` hook — wraps login/logout/me calls; exports `{ user, login, logout, isAuthenticated }`
