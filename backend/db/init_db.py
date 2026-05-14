@@ -14,7 +14,14 @@ def init_db() -> None:
     global engine, SessionLocal
 
     url = os.environ["DATABASE_URL"]  # Hard fail — no silent fallback
-    engine = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=10)
+    engine = create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=1800,
+        connect_args={"options": "-c statement_timeout=300000"},
+    )
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
     with engine.connect() as conn:

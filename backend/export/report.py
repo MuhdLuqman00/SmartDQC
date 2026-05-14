@@ -1,3 +1,16 @@
+"""SmartDQC report builders — KKM-formatted PDF and PPTX output.
+
+Format reference: MOH Malaysia Annual Report 2024 (teal section bars,
+bilingual headers, alternating-row tables, footer stamp).
+
+Content (Feature #15):
+  1. Cover
+  2. Executive Summary  (BM + EN — reused from Feature #9 narrative)
+  3. Data Quality Overview
+  4. Recommendations    (reused from Feature #9 narrative)
+  5. Indicator Tables by District  (requires kpi_result)
+  6. Methodology Appendix
+"""
 from __future__ import annotations
 
 from io import BytesIO
@@ -13,321 +26,582 @@ from reportlab.lib import colors as rl_colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image,
 )
 
-_NAVY  = RGBColor(0x1A, 0x3A, 0x5C)
-_TEAL  = RGBColor(0x08, 0x91, 0xB2)
-_GRAY  = RGBColor(0x64, 0x74, 0x8B)
-_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+from backend.export.charts import chart_quality_bar, chart_nutritional_rates, chart_kpi_vs_target
 
-_METHODOLOGY_LINES = [
-    "Data Sources: myVASS, CCMS, KPM, NCDC",
-    "Z-Score Standard: WHO 2006 Child Growth Standards (WHO_Anthro v3.2.2)",
-    "Classification: WAZ<-2 SD=Underweight; HAZ<-2 SD=Stunted; WHZ<-2 SD=Wasted",
-    "Quality Rules: KKM-defined completeness, consistency, and range checks",
-    "Anomaly Detection: IsolationForest (contamination=0.05) + 3x IQR fence",
-    "Pattern Classification: Decimal shift (x10/div10), digit transposition, column swap",
-    "Risk Scoring: Weighted flag-sum (Stunting x25, Wasting x30, Underweight x20)",
-    "KPI Benchmarks: NPAN 2021-2025 national targets; WHO Global Targets 2025",
-    "Trend Analysis: Ordinary least-squares linear regression (>=3 periods per district)",
-    "Trajectory: Forecasts 4 periods ahead; On Track if forecast <= NPAN target",
-]
+from backend.export.report_template_spec import (
+    KKM_TEAL, KKM_TEAL_DARK, KKM_TEAL_LIGHT,
+    KKM_NAVY, KKM_MID_GRAY, KKM_RULE_LINE,
+    SECTION_LABELS, FOOTER_TEMPLATE, METHODOLOGY_LINES,
+    NUTRITIONAL_TABLE_HEADERS, KPI_TABLE_HEADERS,
+)
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _sec(key: str, lang: str = "en") -> str:
+    return SECTION_LABELS.get(key, {}).get(lang, key.upper())
 
 
-# == PPTX ======================================================================
-
-def build_pptx_bytes(
-    eda_result: dict,
-    narrative: dict,
-    kpi_result: dict | None = None,
-) -> bytes:
-    prs = Presentation()
-    prs.slide_width  = Inches(13.33)
-    prs.slide_height = Inches(7.5)
-    blank = prs.slide_layouts[6]
-
-    _add_title_slide(prs, blank, eda_result)
-    _add_quality_slide(prs, blank, eda_result)
-    _add_narrative_slide(prs, blank, narrative)
-    _add_recommendations_slide(prs, blank, narrative)
-
-    if kpi_result:
-        _add_indicator_table_slide(prs, blank, kpi_result)
-        _add_methodology_slide(prs, blank)
-
-    buf = BytesIO()
-    prs.save(buf)
-    return buf.getvalue()
+def _hex_to_rgb(h: str) -> tuple[int, int, int]:
+    h = h.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-def _bg(slide, r, g, b):
+def _fmt(val) -> str:
+    if val is None:
+        return "-"
+    try:
+        return f"{float(val):.1f}"
+    except (TypeError, ValueError):
+        return str(val)
+
+
+# ===========================================================================
+# PPTX
+# ===========================================================================
+
+def _rgb(h: str) -> RGBColor:
+    r, g, b = _hex_to_rgb(h)
+    return RGBColor(r, g, b)
+
+
+def _bg(slide, h: str):
     fill = slide.background.fill
     fill.solid()
-    fill.fore_color.rgb = RGBColor(r, g, b)
+    fill.fore_color.rgb = _rgb(h)
 
 
-def _txt(slide, text, l, t, w, h, size=18, bold=False, color=None, align=PP_ALIGN.LEFT):
+def _box(slide, text, l, t, w, h, size=11, bold=False,
+         color="#FFFFFF", align=PP_ALIGN.LEFT, wrap=True):
     tb = slide.shapes.add_textbox(Inches(l), Inches(t), Inches(w), Inches(h))
     tf = tb.text_frame
-    tf.word_wrap = True
+    tf.word_wrap = wrap
     p = tf.paragraphs[0]
     p.alignment = align
     run = p.add_run()
     run.text = text
     run.font.size = Pt(size)
     run.font.bold = bold
-    run.font.color.rgb = color if color is not None else _WHITE
+    run.font.color.rgb = _rgb(color)
 
 
-def _add_title_slide(prs, layout, eda):
+def _section_bar_pptx(slide, key: str):
+    """Teal band across the top with 'EN TITLE  /  BM TITLE'."""
+    label = f"{_sec(key, 'en')}  /  {_sec(key, 'bm')}"
+    tb = slide.shapes.add_textbox(
+        Inches(0), Inches(0), Inches(13.33), Inches(0.6),
+    )
+    tf = tb.text_frame
+    tb.fill.solid()
+    tb.fill.fore_color.rgb = _rgb(KKM_TEAL)
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.LEFT
+    run = p.add_run()
+    run.text = f"  {label}"
+    run.font.size = Pt(13)
+    run.font.bold = True
+    run.font.color.rgb = _rgb("#FFFFFF")
+
+
+def _footer_bar_pptx(slide, district: str):
+    footer = FOOTER_TEMPLATE.format(district=district, year=date.today().year)
+    tb = slide.shapes.add_textbox(
+        Inches(0), Inches(7.2), Inches(13.33), Inches(0.28),
+    )
+    tf = tb.text_frame
+    tb.fill.solid()
+    tb.fill.fore_color.rgb = _rgb(KKM_TEAL_DARK)
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    run = p.add_run()
+    run.text = footer
+    run.font.size = Pt(7.5)
+    run.font.color.rgb = _rgb(KKM_TEAL_LIGHT)
+
+
+def _pptx_table(slide, rows: list[list[str]], l, t, w, h,
+                status_cols: list[int] | None = None):
+    """Add a styled KKM table. status_cols = col indices to colour-code."""
+    n_r, n_c = len(rows), len(rows[0])
+    tbl = slide.shapes.add_table(
+        n_r, n_c, Inches(l), Inches(t), Inches(w), Inches(h),
+    ).table
+
+    status_map = {"Green": KKM_TEAL, "Amber": "#E8A020", "Red": "#C0392B"}
+
+    for ri, row in enumerate(rows):
+        for ci, val in enumerate(row):
+            cell = tbl.cell(ri, ci)
+            cell.text_frame.clear()
+            p = cell.text_frame.paragraphs[0]
+            run = p.add_run()
+            run.text = str(val)
+            run.font.size = Pt(10 if ri > 0 else 11)
+            run.font.bold = ri == 0
+
+            if ri == 0:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = _rgb(KKM_TEAL)
+                run.font.color.rgb = _rgb("#FFFFFF")
+            elif status_cols and ci in status_cols and val in status_map:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = _rgb(status_map[val])
+                run.font.color.rgb = _rgb("#FFFFFF")
+                run.font.bold = True
+            elif ri % 2 == 0:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = _rgb(KKM_TEAL_LIGHT)
+                run.font.color.rgb = _rgb(KKM_NAVY)
+            else:
+                run.font.color.rgb = _rgb(KKM_NAVY)
+
+
+# --- individual slides -------------------------------------------------------
+
+def _slide_cover(prs, layout, eda: dict, district: str, date_range: str):
     s = prs.slides.add_slide(layout)
-    _bg(s, 0x1A, 0x3A, 0x5C)
-    summary = eda.get("summary", {})
-    source  = summary.get("source_type", "Unknown").upper()
-    rows    = summary.get("total_rows", "N/A")
-    today   = date.today().strftime("%d %B %Y")
-    _txt(s, "SmartDQC", 0.5, 0.4, 8, 0.5, size=14, bold=True, color=_TEAL)
-    _txt(s, "Data Quality Report", 0.5, 0.9, 10, 1.0, size=36, bold=True)
-    _txt(s, f"Source: {source}  |  Records: {rows}  |  {today}",
-         0.5, 2.0, 11, 0.5, size=14, color=RGBColor(0xA8, 0xC8, 0xD8))
+    _bg(s, KKM_TEAL_DARK)
+    today  = date.today().strftime("%d %B %Y")
+    source = eda.get("summary", {}).get("source_type", "N/A").upper()
+    rows   = eda.get("summary", {}).get("total_rows", "N/A")
+
+    _box(s, "Kementerian Kesihatan Malaysia", 0.6, 0.5, 12, 0.45,
+         size=11, color=KKM_TEAL_LIGHT)
+    _box(s, "LAPORAN PEMAKANAN SmartDQC", 0.6, 1.1, 12, 1.1,
+         size=34, bold=True)
+    _box(s, "SMARTDQC NUTRITION REPORT", 0.6, 2.1, 12, 0.55,
+         size=15, color=KKM_TEAL_LIGHT)
+
+    meta = f"Daerah / District: {district}  |  Sumber / Source: {source}  |  Rekod / Records: {rows}"
+    if date_range:
+        meta += f"  |  Tempoh / Period: {date_range}"
+    _box(s, meta, 0.6, 3.0, 12.0, 0.45, size=10, color=KKM_TEAL_LIGHT)
+    _box(s, today, 0.6, 3.45, 12.0, 0.4, size=10, color="#FFFFFF")
+    _footer_bar_pptx(s, district)
 
 
-def _add_quality_slide(prs, layout, eda):
+def _slide_exec_summary(prs, layout, narrative: dict, district: str):
     s = prs.slides.add_slide(layout)
-    _bg(s, 0xF0, 0xF7, 0xFA)
-    _txt(s, "Data Quality Overview", 0.5, 0.3, 10, 0.6,
-         size=24, bold=True, color=_NAVY)
+    _bg(s, "#FFFFFF")
+    _section_bar_pptx(s, "executive_summary")
+    exec_sum = narrative.get("executive_summary", {})
+    _box(s, "Bahasa Malaysia", 0.5, 0.75, 6.0, 0.38,
+         size=10, bold=True, color=KKM_TEAL)
+    _box(s, exec_sum.get("bm", "-"), 0.5, 1.15, 5.9, 5.7,
+         size=10, color=KKM_NAVY)
+    _box(s, "English", 7.0, 0.75, 6.0, 0.38,
+         size=10, bold=True, color=KKM_TEAL)
+    _box(s, exec_sum.get("en", "-"), 7.0, 1.15, 5.9, 5.7,
+         size=10, color=KKM_NAVY)
+    _footer_bar_pptx(s, district)
+
+
+def _slide_quality(prs, layout, eda: dict, district: str):
+    s = prs.slides.add_slide(layout)
+    _bg(s, KKM_TEAL_LIGHT)
+    _section_bar_pptx(s, "quality_overview")
     quality    = eda.get("quality", {})
     indicators = eda.get("indicators", {})
     outliers   = eda.get("outliers", {})
-    lines = [
-        f"Overall Quality Score : {quality.get('overall_score', 'N/A')}",
-        f"Completeness          : {quality.get('overall_completeness', 'N/A')}%",
-        f"Missing Data Rate     : {quality.get('missing_rate', 'N/A')}",
-        f"Outliers Flagged      : {outliers.get('total_flagged', 'N/A')}",
-    ]
-    for flag in ["stunting_rate", "wasting_rate", "underweight_rate", "overweight_rate"]:
-        if flag in indicators:
-            label = flag.replace("_rate", "").capitalize()
-            val   = indicators[flag]
-            if isinstance(val, float):
-                val = round(val * 100, 1)
-            lines.append(f"{label:22s}: {val}%")
-    _txt(s, "\n".join(lines), 0.5, 1.1, 12, 5.5, size=14, color=_NAVY)
 
-
-def _add_narrative_slide(prs, layout, narrative):
-    s = prs.slides.add_slide(layout)
-    _bg(s, 0x1A, 0x3A, 0x5C)
-    _txt(s, "AI Analysis Summary", 0.5, 0.3, 10, 0.6, size=24, bold=True)
-    exec_sum = narrative.get("executive_summary", {})
-    _txt(s, "Bahasa Malaysia", 0.5, 1.1, 5, 0.4, size=11, bold=True, color=_TEAL)
-    _txt(s, exec_sum.get("bm", "-"), 0.5, 1.55, 5.8, 4.5, size=12)
-    _txt(s, "English", 6.9, 1.1, 5, 0.4, size=11, bold=True, color=_TEAL)
-    _txt(s, exec_sum.get("en", "-"), 6.9, 1.55, 5.8, 4.5, size=12)
-
-
-def _add_recommendations_slide(prs, layout, narrative):
-    s = prs.slides.add_slide(layout)
-    _bg(s, 0xF0, 0xF7, 0xFA)
-    _txt(s, "Recommendations", 0.5, 0.3, 10, 0.6,
-         size=24, bold=True, color=_NAVY)
-    for i, rec in enumerate(narrative.get("recommendations", [])[:3]):
-        y = 1.1 + i * 1.9
-        priority = rec.get("priority", "").upper()
-        _txt(s, f"[{priority}] {rec.get('action', '')}", 0.5, y, 12, 0.45,
-             size=13, bold=True, color=_NAVY)
-        _txt(s, rec.get("en", ""), 0.5, y + 0.45, 12, 1.3, size=11, color=_GRAY)
-
-
-def _add_indicator_table_slide(prs, layout, kpi_result: dict):
-    """Add a per-district indicator rate table slide."""
-    breakdown = kpi_result.get("district_breakdown") or []
-    if not breakdown:
-        return
-
-    s = prs.slides.add_slide(layout)
-    _bg(s, 0xF0, 0xF7, 0xFA)
-    _txt(s, "Indicator Summary by District", 0.5, 0.2, 12, 0.55,
-         size=20, bold=True, color=_NAVY)
-
-    headers    = ["District", "N", "Stunting %", "Wasting %", "Underweight %", "Overweight %"]
-    table_rows = [headers]
-    for row in breakdown[:10]:
-        table_rows.append([
-            str(row.get("district", "")),
-            str(row.get("n_records", "")),
-            str(row.get("stunting_rate_rate",    "-")),
-            str(row.get("wasting_rate_rate",     "-")),
-            str(row.get("underweight_rate_rate", "-")),
-            str(row.get("overweight_rate_rate",  "-")),
-        ])
-
-    n_rows = len(table_rows)
-    n_cols = len(headers)
-    tbl    = s.shapes.add_table(
-        n_rows, n_cols,
-        Inches(0.4), Inches(0.9),
-        Inches(12.5), Inches(min(0.45 * n_rows, 6.3)),
-    ).table
-
-    for r_idx, row_data in enumerate(table_rows):
-        for c_idx, cell_val in enumerate(row_data):
-            cell = tbl.cell(r_idx, c_idx)
-            tf   = cell.text_frame
-            tf.clear()
-            para = tf.paragraphs[0]
-            run  = para.add_run()
-            run.text      = cell_val
-            run.font.size = Pt(11 if r_idx == 0 else 10)
-            run.font.bold = (r_idx == 0)
-            if r_idx == 0:
-                run.font.color.rgb = _WHITE
-                cell.fill.solid()
-                cell.fill.fore_color.rgb = _NAVY
-            elif r_idx % 2 == 0:
-                cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor(0xF0, 0xF7, 0xFA)
-
-
-def _add_methodology_slide(prs, layout):
-    """Add a methodology appendix slide."""
-    s = prs.slides.add_slide(layout)
-    _bg(s, 0x1A, 0x3A, 0x5C)
-    _txt(s, "Methodology Appendix", 0.5, 0.3, 12, 0.55, size=22, bold=True)
-    body = "\n".join(f"- {line}" for line in _METHODOLOGY_LINES)
-    _txt(s, body, 0.5, 1.05, 12.3, 6.0, size=11)
-
-
-# == PDF =======================================================================
-
-def build_pdf_bytes(
-    eda_result: dict,
-    narrative: dict,
-    kpi_result: dict | None = None,
-) -> bytes:
-    buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=2*cm, rightMargin=2*cm,
-                            topMargin=2*cm, bottomMargin=2*cm)
-    styles = getSampleStyleSheet()
-    h1  = ParagraphStyle("H1",  parent=styles["Heading1"],  fontSize=20,
-                         textColor=rl_colors.HexColor("#1A3A5C"))
-    h2  = ParagraphStyle("H2",  parent=styles["Heading2"],  fontSize=14,
-                         textColor=rl_colors.HexColor("#0891B2"))
-    bod = ParagraphStyle("Body", parent=styles["Normal"],   fontSize=11, leading=16)
-    sm  = ParagraphStyle("Sm",   parent=styles["Normal"],   fontSize=9,
-                         textColor=rl_colors.HexColor("#64748B"))
-
-    story = []
-    today   = date.today().strftime("%d %B %Y")
-    summary = eda_result.get("summary", {})
-
-    story.append(Paragraph("SmartDQC - Data Quality Report", h1))
-    story.append(Paragraph(
-        f"Source: {summary.get('source_type','N/A').upper()}  |  "
-        f"Records: {summary.get('total_rows','N/A')}  |  {today}", sm))
-    story.append(HRFlowable(width="100%", thickness=2,
-                            color=rl_colors.HexColor("#0891B2")))
-    story.append(Spacer(1, 0.4*cm))
-
-    story.append(Paragraph("Data Quality Overview", h2))
-    quality    = eda_result.get("quality", {})
-    indicators = eda_result.get("indicators", {})
-    outliers   = eda_result.get("outliers", {})
-    q_rows = [
-        ["Metric", "Value"],
-        ["Overall Quality Score",  str(quality.get("overall_score", "N/A"))],
-        ["Completeness",           f"{quality.get('overall_completeness','N/A')}%"],
-        ["Missing Data Rate",      str(quality.get("missing_rate", "N/A"))],
-        ["Outliers Flagged",       str(outliers.get("total_flagged", "N/A"))],
-    ]
+    rows = [["Metric / Metrik", "Value / Nilai"]]
+    rows.append(["Overall Quality Score / Skor Kualiti", str(quality.get("overall_score", "-"))])
+    rows.append(["Completeness / Kelengkapan", f"{quality.get('overall_completeness', '-')}%"])
+    rows.append(["Missing Data Rate / Kadar Data Hilang", str(quality.get("missing_rate", "-"))])
+    rows.append(["Outliers Flagged / Pencilan Ditanda", str(outliers.get("total_flagged", "-"))])
     for flag in ["stunting_rate", "wasting_rate", "underweight_rate", "overweight_rate"]:
         if flag in indicators:
             val = indicators[flag]
             if isinstance(val, float):
                 val = round(val * 100, 1)
-            q_rows.append([flag.replace("_rate", "").capitalize(), f"{val}%"])
+            label = flag.replace("_rate", "").capitalize()
+            rows.append([label, f"{val}%"])
 
-    tbl = Table(q_rows, colWidths=[10*cm, 6*cm])
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",     (0, 0), (-1, 0), rl_colors.HexColor("#1A3A5C")),
-        ("TEXTCOLOR",      (0, 0), (-1, 0), rl_colors.white),
-        ("FONTSIZE",       (0, 0), (-1, -1), 10),
-        ("GRID",           (0, 0), (-1, -1), 0.5, rl_colors.HexColor("#E2EEF4")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-         [rl_colors.white, rl_colors.HexColor("#F0F7FA")]),
-        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",     (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING",  (0, 0), (-1, -1), 6),
-    ]))
-    story.append(tbl)
-    story.append(Spacer(1, 0.6*cm))
+    _pptx_table(s, rows, l=0.4, t=0.75, w=6.0, h=min(0.45 * len(rows), 6.3))
 
-    exec_sum = narrative.get("executive_summary", {})
-    if exec_sum:
-        story.append(Paragraph("AI Analysis Summary", h2))
-        story.append(Paragraph(
-            f"<b>Bahasa Malaysia</b><br/>{exec_sum.get('bm','')}", bod))
-        story.append(Spacer(1, 0.3*cm))
-        story.append(Paragraph(
-            f"<b>English</b><br/>{exec_sum.get('en','')}", bod))
-        story.append(Spacer(1, 0.6*cm))
+    chart_png = chart_quality_bar(eda)
+    if chart_png:
+        s.shapes.add_picture(BytesIO(chart_png), Inches(6.8), Inches(0.75), Inches(6.1), Inches(5.8))
 
-    recs = narrative.get("recommendations", [])
-    if recs:
-        story.append(Paragraph("Recommendations", h2))
-        for rec in recs[:5]:
-            story.append(Paragraph(
-                f"<b>[{rec.get('priority','').upper()}] {rec.get('action','')}</b>", bod))
-            story.append(Paragraph(rec.get("en", ""), bod))
-            story.append(Spacer(1, 0.2*cm))
+    _footer_bar_pptx(s, district)
+
+
+def _slide_recommendations(prs, layout, narrative: dict, district: str):
+    s = prs.slides.add_slide(layout)
+    _bg(s, "#FFFFFF")
+    _section_bar_pptx(s, "recommendations")
+    for i, rec in enumerate(narrative.get("recommendations", [])[:3]):
+        y = 0.75 + i * 2.0
+        priority = rec.get("priority", "").upper()
+        _box(s, f"[{priority}] {rec.get('action', '')}", 0.5, y, 12.3, 0.45,
+             size=12, bold=True, color=KKM_NAVY)
+        _box(s, rec.get("bm", ""), 0.5, y + 0.48, 6.0, 1.3, size=10, color=KKM_MID_GRAY)
+        _box(s, rec.get("en",  ""), 6.7, y + 0.48, 6.0, 1.3, size=10, color=KKM_MID_GRAY)
+    _footer_bar_pptx(s, district)
+
+
+def _slide_indicator_table(prs, layout, kpi_result: dict, district: str, lang: str = "en"):
+    breakdown = kpi_result.get("district_breakdown") or []
+    s = prs.slides.add_slide(layout)
+    _bg(s, KKM_TEAL_LIGHT)
+    _section_bar_pptx(s, "indicator_table")
+
+    headers = NUTRITIONAL_TABLE_HEADERS[lang]
+    rows = [headers]
+    for row in breakdown[:8]:
+        rows.append([
+            str(row.get("district", "")),
+            str(row.get("n_records", "")),
+            _fmt(row.get("stunting_rate_rate")),
+            _fmt(row.get("wasting_rate_rate")),
+            _fmt(row.get("underweight_rate_rate")),
+            _fmt(row.get("overweight_rate_rate")),
+        ])
+
+    table_h = min(0.42 * len(rows), 3.5)
+    if len(rows) > 1:
+        _pptx_table(s, rows, l=0.4, t=0.75, w=12.5, h=table_h)
+    else:
+        _box(s, "No district breakdown available.", 0.5, 1.5, 12, 1.0,
+             size=11, color=KKM_NAVY)
+
+    chart_y = 0.75 + table_h + 0.15
+    chart_h = min(6.9 - chart_y, 3.2)
+    if chart_h > 1.0:
+        chart2 = chart_nutritional_rates(kpi_result)
+        chart3 = chart_kpi_vs_target(kpi_result)
+        if chart2:
+            s.shapes.add_picture(BytesIO(chart2), Inches(0.4), Inches(chart_y),
+                                 Inches(6.4), Inches(chart_h))
+        if chart3:
+            s.shapes.add_picture(BytesIO(chart3), Inches(7.0), Inches(chart_y),
+                                 Inches(6.0), Inches(chart_h))
+
+    _footer_bar_pptx(s, district)
+
+
+def _slide_methodology(prs, layout, district: str):
+    s = prs.slides.add_slide(layout)
+    _bg(s, KKM_TEAL_DARK)
+    _section_bar_pptx(s, "methodology")
+    body = "\n".join(f"  - {line}" for line in METHODOLOGY_LINES)
+    _box(s, body, 0.5, 0.75, 12.3, 6.3, size=9.5)
+    _footer_bar_pptx(s, district)
+
+
+# --- public entry point ------------------------------------------------------
+
+def build_pptx_bytes(
+    eda_result: dict,
+    narrative: dict,
+    kpi_result: dict | None = None,
+    district: str = "Malaysia",
+    date_range: str = "",
+    lang: str = "en",
+) -> bytes:
+    prs = Presentation()
+    prs.slide_width  = Inches(13.33)
+    prs.slide_height = Inches(7.5)
+    blank = prs.slide_layouts[6]
+
+    _slide_cover(prs, blank, eda_result, district, date_range)
+    _slide_exec_summary(prs, blank, narrative, district)
+    _slide_quality(prs, blank, eda_result, district)
+    _slide_recommendations(prs, blank, narrative, district)
 
     if kpi_result:
-        _build_pdf_indicator_table(story, kpi_result, h2, sm)
-        _build_pdf_methodology_appendix(story, h2, sm)
+        _slide_indicator_table(prs, blank, kpi_result, district, lang)
 
-    doc.build(story)
+    _slide_methodology(prs, blank, district)
+
+    buf = BytesIO()
+    prs.save(buf)
     return buf.getvalue()
 
 
-def _build_pdf_indicator_table(story: list, kpi_result: dict, h2, sm):
-    breakdown = kpi_result.get("district_breakdown") or []
-    if not breakdown:
-        return
+# ===========================================================================
+# PDF
+# ===========================================================================
 
-    story.append(Paragraph("Indicator Summary by District", h2))
-    headers    = ["District", "N", "Stunting %", "Wasting %", "Underweight %", "Overweight %"]
-    table_data = [headers]
+def _pdf_styles():
+    base = getSampleStyleSheet()
+    cover_h = ParagraphStyle(
+        "CoverH", parent=base["Normal"],
+        fontSize=28, leading=34, fontName="Helvetica-Bold",
+        textColor=rl_colors.white,
+    )
+    sec_label = ParagraphStyle(
+        "SecLabel", parent=base["Normal"],
+        fontSize=11, leading=15, fontName="Helvetica-Bold",
+        textColor=rl_colors.white,
+    )
+    h2 = ParagraphStyle(
+        "H2", parent=base["Normal"],
+        fontSize=12, leading=16, fontName="Helvetica-Bold",
+        textColor=rl_colors.HexColor(KKM_TEAL), spaceBefore=8,
+    )
+    body = ParagraphStyle(
+        "Body", parent=base["Normal"],
+        fontSize=10, leading=15,
+        textColor=rl_colors.HexColor(KKM_NAVY),
+    )
+    small = ParagraphStyle(
+        "Small", parent=base["Normal"],
+        fontSize=8.5, leading=13,
+        textColor=rl_colors.HexColor(KKM_MID_GRAY),
+    )
+    return cover_h, sec_label, h2, body, small
+
+
+def _section_bar_pdf(label_en: str, label_bm: str, sec_label_style) -> Table:
+    """Teal header bar matching KKM section style."""
+    tbl = Table(
+        [[Paragraph(f"{label_en}  /  {label_bm}", sec_label_style)]],
+        colWidths=[17 * cm],
+    )
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), rl_colors.HexColor(KKM_TEAL)),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+    ]))
+    return tbl
+
+
+def _base_table_style() -> list:
+    return [
+        ("BACKGROUND",    (0, 0), (-1, 0),  rl_colors.HexColor(KKM_TEAL)),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  rl_colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 9),
+        ("GRID",          (0, 0), (-1, -1), 0.4, rl_colors.HexColor(KKM_RULE_LINE)),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1),
+         [rl_colors.white, rl_colors.HexColor(KKM_TEAL_LIGHT)]),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+    ]
+
+
+def _make_footer_canvas(district: str, year: int):
+    from reportlab.pdfgen.canvas import Canvas
+
+    class KKMCanvas(Canvas):
+        def showPage(self):
+            _stamp_footer(self, district, year)
+            super().showPage()
+
+        def save(self):
+            _stamp_footer(self, district, year)
+            super().save()
+
+    return KKMCanvas
+
+
+def _stamp_footer(canvas, district: str, year: int):
+    text = FOOTER_TEMPLATE.format(district=district, year=year)
+    canvas.saveState()
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(rl_colors.HexColor(KKM_MID_GRAY))
+    canvas.drawCentredString(A4[0] / 2.0, 0.7 * cm, text)
+    canvas.restoreState()
+
+
+# --- section builders --------------------------------------------------------
+
+def _pdf_section_cover(story, eda: dict, district: str, date_range: str,
+                       cover_h, small):
+    today  = date.today().strftime("%d %B %Y")
+    source = eda.get("summary", {}).get("source_type", "N/A").upper()
+    rows   = eda.get("summary", {}).get("total_rows", "N/A")
+    meta   = (
+        f"Daerah / District: {district}  |  Sumber / Source: {source}"
+        f"  |  Rekod / Records: {rows}"
+        + (f"  |  Tempoh / Period: {date_range}" if date_range else "")
+    )
+
+    cover_tbl = Table(
+        [
+            [Paragraph("LAPORAN PEMAKANAN SmartDQC", cover_h)],
+            [Paragraph("SMARTDQC NUTRITION REPORT",  cover_h)],
+            [Paragraph(
+                f'<font color="{KKM_TEAL_LIGHT}">{meta}<br/>{today}</font>',
+                small,
+            )],
+        ],
+        colWidths=[17 * cm],
+    )
+    cover_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), rl_colors.HexColor(KKM_TEAL_DARK)),
+        ("TOPPADDING",    (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 16),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(cover_tbl)
+    story.append(Spacer(1, 0.5 * cm))
+
+
+def _pdf_section_exec_summary(story, narrative: dict, sec_label, h2, body):
+    story.append(_section_bar_pdf(_sec("executive_summary", "en"),
+                                  _sec("executive_summary", "bm"), sec_label))
+    story.append(Spacer(1, 0.2 * cm))
+    exec_sum = narrative.get("executive_summary", {})
+    story.append(Paragraph("<b>Bahasa Malaysia</b>", h2))
+    story.append(Paragraph(exec_sum.get("bm", "-"), body))
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(Paragraph("<b>English</b>", h2))
+    story.append(Paragraph(exec_sum.get("en", "-"), body))
+    story.append(Spacer(1, 0.5 * cm))
+
+
+def _pdf_section_quality(story, eda: dict, sec_label, h2, body):
+    story.append(_section_bar_pdf(_sec("quality_overview", "en"),
+                                  _sec("quality_overview", "bm"), sec_label))
+    story.append(Spacer(1, 0.2 * cm))
+    quality    = eda.get("quality", {})
+    indicators = eda.get("indicators", {})
+    outliers   = eda.get("outliers", {})
+
+    data = [["Metric / Metrik", "Value / Nilai"]]
+    data.append(["Overall Quality Score / Skor Kualiti",
+                 str(quality.get("overall_score", "-"))])
+    data.append(["Completeness / Kelengkapan",
+                 f"{quality.get('overall_completeness', '-')}%"])
+    data.append(["Missing Data Rate / Kadar Data Hilang",
+                 str(quality.get("missing_rate", "-"))])
+    data.append(["Outliers Flagged / Pencilan Ditanda",
+                 str(outliers.get("total_flagged", "-"))])
+    for flag in ["stunting_rate", "wasting_rate", "underweight_rate", "overweight_rate"]:
+        if flag in indicators:
+            val = indicators[flag]
+            if isinstance(val, float):
+                val = round(val * 100, 1)
+            data.append([flag.replace("_rate", "").capitalize(), f"{val}%"])
+
+    tbl = Table(data, colWidths=[11 * cm, 6 * cm])
+    tbl.setStyle(TableStyle(_base_table_style()))
+    story.append(tbl)
+
+    chart_png = chart_quality_bar(eda)
+    if chart_png:
+        img = Image(BytesIO(chart_png), width=14 * cm, height=7 * cm)
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(img)
+
+    story.append(Spacer(1, 0.5 * cm))
+
+
+def _pdf_section_recommendations(story, narrative: dict, sec_label, h2, body):
+    recs = narrative.get("recommendations", [])
+    if not recs:
+        return
+    story.append(_section_bar_pdf(_sec("recommendations", "en"),
+                                  _sec("recommendations", "bm"), sec_label))
+    story.append(Spacer(1, 0.2 * cm))
+    for rec in recs[:5]:
+        priority = rec.get("priority", "").upper()
+        story.append(Paragraph(
+            f"<b>[{priority}] {rec.get('action', '')}</b>", h2))
+        story.append(Paragraph(
+            f"<b>BM:</b> {rec.get('bm', '-')}", body))
+        story.append(Paragraph(
+            f"<b>EN:</b> {rec.get('en', '-')}", body))
+        story.append(Spacer(1, 0.25 * cm))
+    story.append(Spacer(1, 0.3 * cm))
+
+
+def _pdf_section_indicator_table(story, kpi_result: dict, sec_label, lang: str = "en"):
+    breakdown = kpi_result.get("district_breakdown") or []
+    story.append(_section_bar_pdf(_sec("indicator_table", "en"),
+                                  _sec("indicator_table", "bm"), sec_label))
+    story.append(Spacer(1, 0.2 * cm))
+
+    headers = NUTRITIONAL_TABLE_HEADERS[lang]
+    data = [headers]
     for row in breakdown:
-        table_data.append([
+        data.append([
             str(row.get("district", "")),
             str(row.get("n_records", "")),
-            str(row.get("stunting_rate_rate",    "-")),
-            str(row.get("wasting_rate_rate",     "-")),
-            str(row.get("underweight_rate_rate", "-")),
-            str(row.get("overweight_rate_rate",  "-")),
+            _fmt(row.get("stunting_rate_rate")),
+            _fmt(row.get("wasting_rate_rate")),
+            _fmt(row.get("underweight_rate_rate")),
+            _fmt(row.get("overweight_rate_rate")),
         ])
 
-    tbl = Table(table_data, colWidths=[4*cm, 1.5*cm, 3*cm, 2.5*cm, 3.5*cm, 3*cm])
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",     (0, 0), (-1, 0), rl_colors.HexColor("#1A3A5C")),
-        ("TEXTCOLOR",      (0, 0), (-1, 0), rl_colors.white),
-        ("FONTSIZE",       (0, 0), (-1, -1), 9),
-        ("GRID",           (0, 0), (-1, -1), 0.5, rl_colors.HexColor("#E2EEF4")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-         [rl_colors.white, rl_colors.HexColor("#F0F7FA")]),
-        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",     (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
-    ]))
-    story.append(tbl)
-    story.append(Spacer(1, 0.6*cm))
+    if len(data) > 1:
+        tbl = Table(data, colWidths=[4.5*cm, 1.5*cm, 2.5*cm, 2.5*cm, 2.7*cm, 2.8*cm])
+        tbl.setStyle(TableStyle(_base_table_style()))
+        story.append(tbl)
+    else:
+        from reportlab.lib.styles import getSampleStyleSheet
+        story.append(Paragraph("No district breakdown available.",
+                               getSampleStyleSheet()["Normal"]))
+
+    chart2 = chart_nutritional_rates(kpi_result)
+    chart3 = chart_kpi_vs_target(kpi_result)
+    if chart2 or chart3:
+        story.append(Spacer(1, 0.3 * cm))
+        chart_row = []
+        if chart2:
+            chart_row.append(Image(BytesIO(chart2), width=8.5 * cm, height=6.5 * cm))
+        if chart3:
+            chart_row.append(Image(BytesIO(chart3), width=8.5 * cm, height=6.5 * cm))
+        if len(chart_row) == 2:
+            chart_tbl = Table([chart_row], colWidths=[8.5 * cm, 8.5 * cm])
+            chart_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+            story.append(chart_tbl)
+        elif chart_row:
+            story.append(chart_row[0])
+
+    story.append(Spacer(1, 0.5 * cm))
 
 
-def _build_pdf_methodology_appendix(story: list, h2, sm):
-    story.append(Paragraph("Methodology Appendix", h2))
-    for line in _METHODOLOGY_LINES:
-        story.append(Paragraph(f"- {line}", sm))
-    story.append(Spacer(1, 0.3*cm))
+def _pdf_section_methodology(story, sec_label, small):
+    story.append(_section_bar_pdf(_sec("methodology", "en"),
+                                  _sec("methodology", "bm"), sec_label))
+    story.append(Spacer(1, 0.2 * cm))
+    for line in METHODOLOGY_LINES:
+        story.append(Paragraph(f"- {line}", small))
+    story.append(Spacer(1, 0.3 * cm))
+
+
+# --- public entry point ------------------------------------------------------
+
+def build_pdf_bytes(
+    eda_result: dict,
+    narrative: dict,
+    kpi_result: dict | None = None,
+    district: str = "Malaysia",
+    date_range: str = "",
+    lang: str = "en",
+) -> bytes:
+    buf = BytesIO()
+    footer_canvas = _make_footer_canvas(district, date.today().year)
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=2 * cm, rightMargin=2 * cm,
+        topMargin=2 * cm, bottomMargin=2 * cm,
+    )
+
+    cover_h, sec_label, h2, body, small = _pdf_styles()
+    story: list = []
+
+    _pdf_section_cover(story, eda_result, district, date_range, cover_h, small)
+    _pdf_section_exec_summary(story, narrative, sec_label, h2, body)
+    _pdf_section_quality(story, eda_result, sec_label, h2, body)
+    _pdf_section_recommendations(story, narrative, sec_label, h2, body)
+
+    if kpi_result:
+        _pdf_section_indicator_table(story, kpi_result, sec_label, lang)
+
+    _pdf_section_methodology(story, sec_label, small)
+
+    doc.build(story, canvasmaker=footer_canvas)
+    return buf.getvalue()

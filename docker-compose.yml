@@ -1,6 +1,15 @@
 services:
   postgres:
     image: postgres:16-alpine
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c work_mem=64MB
+      -c maintenance_work_mem=256MB
+      -c effective_cache_size=2GB
+      -c random_page_cost=1.1
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-smartdqc}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartdqc}

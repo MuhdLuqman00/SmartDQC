@@ -1,58 +1,256 @@
+"""Tests for Feature #15 — KKM-formatted report generation (PDF + PPTX)."""
 from io import BytesIO
 
+import pdfplumber
+import pytest
 from pptx import Presentation
+from pptx.dml.color import RGBColor
 
-from backend.export.report import (
-    _add_indicator_table_slide,
-    _add_methodology_slide,
-    build_pptx_bytes,
-    build_pdf_bytes,
+from backend.export.report import build_pptx_bytes, build_pdf_bytes
+from backend.export.report_template_spec import (
+    KKM_TEAL, SECTION_LABELS,
+)
+from backend.export.charts import (
+    chart_quality_bar, chart_nutritional_rates, chart_kpi_vs_target,
 )
 
 
-def _sample_kpi_result() -> dict:
+def _pdf_text(data: bytes) -> str:
+    """Extract all text from a PDF using pdfplumber."""
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        return "\n".join(
+            page.extract_text() or "" for page in pdf.pages
+        )
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+def _eda():
     return {
-        "kpis": [{"kpi": "stunting_rate", "actual": 18.5, "target": 15.0,
-                  "who_target": 20.0, "status": "Amber", "who_status": "Green"}],
+        "summary":    {"source_type": "myvass", "total_rows": 100},
+        "quality":    {"overall_score": 82, "overall_completeness": 91.5,
+                       "missing_rate": 0.08},
+        "indicators": {"stunting_rate": 0.185, "wasting_rate": 0.032},
+        "outliers":   {"total_flagged": 7},
+    }
+
+
+def _narrative():
+    return {
+        "executive_summary": {
+            "bm": "Ringkasan ujian dalam Bahasa Malaysia.",
+            "en": "Test executive summary in English.",
+        },
+        "recommendations": [
+            {"action": "Increase monitoring", "priority": "HIGH",
+             "bm": "Tingkatkan pemantauan.", "en": "Increase monitoring."},
+        ],
+    }
+
+
+def _kpi():
+    return {
+        "kpis": [
+            {"kpi": "stunting_rate", "actual": 18.5, "target": 15.0,
+             "who_target": 20.0, "status": "Amber", "who_status": "Green"},
+        ],
         "overall_status": "Amber",
         "district_breakdown": [
             {"district": "Petaling", "n_records": 100,
              "stunting_rate_rate": 18.5, "wasting_rate_rate": 3.2,
              "underweight_rate_rate": 9.1, "overweight_rate_rate": 8.0},
-            {"district": "Klang", "n_records": 80,
+            {"district": "Klang",    "n_records": 80,
              "stunting_rate_rate": 22.1, "wasting_rate_rate": 6.0,
              "underweight_rate_rate": 11.0, "overweight_rate_rate": 9.5},
         ],
     }
 
 
-def test_add_indicator_table_slide_adds_one_slide():
-    prs = Presentation()
-    blank = prs.slide_layouts[6]
-    _add_indicator_table_slide(prs, blank, _sample_kpi_result())
-    assert len(prs.slides) == 1
+# ---------------------------------------------------------------------------
+# PPTX tests
+# ---------------------------------------------------------------------------
 
-
-def test_add_methodology_slide_adds_one_slide():
-    prs = Presentation()
-    blank = prs.slide_layouts[6]
-    _add_methodology_slide(prs, blank)
-    assert len(prs.slides) == 1
-
-
-def test_build_pptx_with_kpi_result_has_six_slides():
-    eda  = {"summary": {"source_type": "myvass", "total_rows": 100},
-            "quality": {}, "indicators": {}, "outliers": {}}
-    narr = {"executive_summary": {"bm": "ujian", "en": "test"}, "recommendations": []}
-    data = build_pptx_bytes(eda, narr, kpi_result=_sample_kpi_result())
+def test_pptx_without_kpi_has_five_slides():
+    """Cover + Exec Summary + Quality + Recommendations + Methodology = 5."""
+    data = build_pptx_bytes(_eda(), _narrative())
     prs  = Presentation(BytesIO(data))
-    # 4 original slides + indicator table + methodology = 6
+    assert len(prs.slides) == 5
+
+
+def test_pptx_with_kpi_has_six_slides():
+    """Adds Indicator Table slide when kpi_result is provided."""
+    data = build_pptx_bytes(_eda(), _narrative(), kpi_result=_kpi())
+    prs  = Presentation(BytesIO(data))
     assert len(prs.slides) == 6
 
 
-def test_build_pdf_with_kpi_result_is_valid_pdf():
-    eda  = {"summary": {"source_type": "myvass", "total_rows": 100},
-            "quality": {}, "indicators": {}, "outliers": {}}
-    narr = {"executive_summary": {"bm": "ujian", "en": "test"}, "recommendations": []}
-    data = build_pdf_bytes(eda, narr, kpi_result=_sample_kpi_result())
+def test_pptx_cover_slide_has_text():
+    data = build_pptx_bytes(_eda(), _narrative(), district="Petaling")
+    prs  = Presentation(BytesIO(data))
+    cover_text = " ".join(
+        shape.text_frame.text
+        for shape in prs.slides[0].shapes
+        if shape.has_text_frame
+    )
+    assert "SmartDQC" in cover_text
+    assert "Petaling" in cover_text
+
+
+def test_pptx_section_bars_are_teal():
+    """Every non-cover slide should have at least one teal-filled textbox."""
+    data = build_pptx_bytes(_eda(), _narrative(), kpi_result=_kpi())
+    prs  = Presentation(BytesIO(data))
+    teal = RGBColor(0x00, 0x69, 0x7A)
+
+    for idx, slide in enumerate(prs.slides):
+        if idx == 0:          # cover slide has dark bg, not teal bar
+            continue
+        filled_tbs = [
+            sh for sh in slide.shapes
+            if sh.has_text_frame and sh.fill.type is not None
+        ]
+        teal_found = any(
+            sh.fill.fore_color.rgb == teal
+            for sh in filled_tbs
+        )
+        assert teal_found, f"No teal section bar found on slide index {idx}"
+
+
+def test_pptx_exec_summary_bilingual():
+    data = build_pptx_bytes(_eda(), _narrative())
+    prs  = Presentation(BytesIO(data))
+    exec_slide_text = " ".join(
+        sh.text_frame.text
+        for sh in prs.slides[1].shapes
+        if sh.has_text_frame
+    )
+    assert "Bahasa Malaysia" in exec_slide_text
+    assert "English"         in exec_slide_text
+
+
+def test_pptx_footer_contains_kkm():
+    data = build_pptx_bytes(_eda(), _narrative())
+    prs  = Presentation(BytesIO(data))
+    all_text = " ".join(
+        sh.text_frame.text
+        for slide in prs.slides
+        for sh in slide.shapes
+        if sh.has_text_frame
+    )
+    assert "Kementerian Kesihatan Malaysia" in all_text
+
+
+def test_pptx_district_param_appears_in_output():
+    data = build_pptx_bytes(_eda(), _narrative(), district="Klang Utara")
+    prs  = Presentation(BytesIO(data))
+    all_text = " ".join(
+        sh.text_frame.text
+        for slide in prs.slides
+        for sh in slide.shapes
+        if sh.has_text_frame
+    )
+    assert "Klang Utara" in all_text
+
+
+# ---------------------------------------------------------------------------
+# PDF tests
+# ---------------------------------------------------------------------------
+
+def test_pdf_is_valid():
+    data = build_pdf_bytes(_eda(), _narrative())
     assert data[:4] == b"%PDF"
+
+
+def test_pdf_with_kpi_is_valid():
+    data = build_pdf_bytes(_eda(), _narrative(), kpi_result=_kpi())
+    assert data[:4] == b"%PDF"
+
+
+def test_pdf_contains_bilingual_section_labels():
+    """BM and EN section labels must appear in extracted PDF text."""
+    data = build_pdf_bytes(_eda(), _narrative(), kpi_result=_kpi())
+    text = _pdf_text(data)
+    assert "RINGKASAN EKSEKUTIF"              in text
+    assert "EXECUTIVE SUMMARY"               in text
+    assert "INDICATOR TABLE BY DISTRICT"     in text
+    assert "JADUAL PETUNJUK MENGIKUT DAERAH" in text
+    assert "METHODOLOGY APPENDIX"            in text
+    assert "LAMPIRAN METODOLOGI"             in text
+
+
+def test_pdf_footer_contains_kkm():
+    data = build_pdf_bytes(_eda(), _narrative(), district="Selangor")
+    text = _pdf_text(data)
+    assert "Kementerian Kesihatan Malaysia" in text
+    assert "Selangor"                       in text
+
+
+def test_pdf_quality_section_present():
+    data = build_pdf_bytes(_eda(), _narrative())
+    text = _pdf_text(data)
+    assert "82"           in text   # overall_score from fixture
+    assert "Completeness" in text
+
+
+def test_pdf_recommendations_present():
+    data = build_pdf_bytes(_eda(), _narrative())
+    text = _pdf_text(data)
+    assert "Increase monitoring" in text
+
+
+def test_pdf_lang_bm_uses_bm_headers():
+    """lang='bm' should use Malay column headers in indicator table."""
+    data = build_pdf_bytes(_eda(), _narrative(), kpi_result=_kpi(), lang="bm")
+    text = _pdf_text(data)
+    assert "Daerah" in text
+
+
+# ---------------------------------------------------------------------------
+# Chart unit tests
+# ---------------------------------------------------------------------------
+
+def test_chart_quality_bar_returns_png():
+    png = chart_quality_bar(_eda())
+    assert png is not None
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_chart_quality_bar_returns_none_without_quality_data():
+    assert chart_quality_bar({}) is None
+
+
+def test_chart_nutritional_rates_returns_png():
+    png = chart_nutritional_rates(_kpi())
+    assert png is not None
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_chart_nutritional_rates_returns_none_without_breakdown():
+    assert chart_nutritional_rates({"kpis": []}) is None
+    assert chart_nutritional_rates(None) is None
+
+
+def test_chart_kpi_vs_target_returns_png():
+    png = chart_kpi_vs_target(_kpi())
+    assert png is not None
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_chart_kpi_vs_target_returns_none_without_kpis():
+    assert chart_kpi_vs_target({}) is None
+    assert chart_kpi_vs_target(None) is None
+
+
+def test_pdf_with_kpi_embeds_charts():
+    """Charts produce a larger PDF than the table-only version."""
+    data_no_kpi  = build_pdf_bytes(_eda(), _narrative())
+    data_with_kpi = build_pdf_bytes(_eda(), _narrative(), kpi_result=_kpi())
+    assert len(data_with_kpi) > len(data_no_kpi)
+
+
+def test_pptx_quality_slide_with_chart_is_larger():
+    """Quality chart image adds bytes to the PPTX."""
+    data = build_pptx_bytes(_eda(), _narrative())
+    assert len(data) > 10_000

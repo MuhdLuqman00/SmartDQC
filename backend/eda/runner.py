@@ -296,33 +296,42 @@ def myvass_wide_to_long(df: pd.DataFrame) -> pd.DataFrame:
     if not year_cols:
         return df
 
-    rows = []
-    for _, row in df.iterrows():
-        for year in ["2023", "2024", "2025", "2026"]:
-            yr_cols = {c: row[c] for c in year_cols if str(c).startswith(year + " ")}
-            if all(pd.isna(v) or str(v).strip() == "" for v in yr_cols.values()):
-                continue
-            new_row = {c: row[c] for c in id_cols}
-            new_row["tahun_ukur"] = year
-            for c, v in yr_cols.items():
-                # Strip year prefix: "2025 Berat (kg)" -> "Berat (kg)"
-                suffix = str(c).replace(f"{year} ", "", 1).strip()
-                # Normalize to snake_case matching standard schema
-                new_key = (
-                    suffix.lower()
-                    .replace("tarikh pengukuran", "tarikh_ukur")
-                    .replace("berat (kg)", "berat_kg")
-                    .replace("tinggi (cm)", "tinggi_cm")
-                    .replace("panjang (cm)", "panjang_cm")
-                    .replace("status berat", "status_berat")
-                    .replace("status tinggi", "status_tinggi")
-                    .replace("status bmi", "status_bmi")
-                    .replace(" ", "_")
-                    .replace("(", "").replace(")", "")
-                )
-                new_row[new_key] = v
-            rows.append(new_row)
-    return pd.DataFrame(rows) if rows else df
+    def _normalize_suffix(suffix: str) -> str:
+        return (
+            suffix.lower()
+            .replace("tarikh pengukuran", "tarikh_ukur")
+            .replace("berat (kg)", "berat_kg")
+            .replace("tinggi (cm)", "tinggi_cm")
+            .replace("panjang (cm)", "panjang_cm")
+            .replace("status berat", "status_berat")
+            .replace("status tinggi", "status_tinggi")
+            .replace("status bmi", "status_bmi")
+            .replace(" ", "_")
+            .replace("(", "").replace(")", "")
+        )
+
+    year_frames = []
+    for year in ["2023", "2024", "2025", "2026"]:
+        yr_cols = [c for c in year_cols if str(c).startswith(year + " ")]
+        if not yr_cols:
+            continue
+        rename_map = {
+            c: _normalize_suffix(str(c).replace(f"{year} ", "", 1).strip())
+            for c in yr_cols
+        }
+        sub = df[id_cols + yr_cols].rename(columns=rename_map).copy()
+        sub["tahun_ukur"] = year
+        yr_renamed = list(rename_map.values())
+        null_mask  = sub[yr_renamed].isna()
+        empty_mask = sub[yr_renamed].astype(str).apply(lambda col: col.str.strip() == "")
+        all_empty  = (null_mask | empty_mask).all(axis=1)
+        sub = sub[~all_empty]
+        if not sub.empty:
+            year_frames.append(sub)
+
+    if not year_frames:
+        return df
+    return pd.concat(year_frames, ignore_index=True)
 
 
 # ─── MAIN EDA FUNCTION ────────────────────────────────────────────────────────

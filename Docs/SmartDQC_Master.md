@@ -67,18 +67,18 @@
 | WHO daily LMS z-scores | `backend/eda/who_zscore_daily.py` | Higher-precision daily age lookup vs. monthly interpolation |
 | Dual-namespace API | `backend/main.py` | `/eda/*` (EDA pipeline) + `/clean/*` (dedicated cleaning) — ~20 endpoints total, not 10 |
 
-### 3.2 AI Portion — Not Started
+### 3.2 AI Portion — Status as of Day 5 (2026-05-14)
 
-| # | Feature | Day | Notes |
-|---|---------|-----|-------|
-| 9 | AI Insight Generation | Day 2 | Merged with #10 — single LLM call |
-| 10 | Smart Recommendations | Day 2 | Merged with #9 — do not build separate pipeline |
-| 11 | Predictive Risk Scoring | Day 4 | Child-level + district-level |
-| 12 | Smart Data Correction Suggestions | Day 3 | ML layer on top of existing `outliers.py` |
-| 13 | Natural Language Querying | Day 2 | BM/English → pandas → answer + chart |
-| 14 | Cross-Dataset Entity Resolution | Day 5 | MVP only: IC + DOB exact/fuzzy match |
-| 15 | Automated Report Generation | Day 3 | Reuses narratives from #9/#10 — no duplicate LLM calls |
-| 16 | Benchmarking & Target Tracking | Day 4 | Traffic-light dashboard vs national KPIs + WHO |
+| # | Feature | Status | Gap |
+|---|---------|--------|-----|
+| 9 | AI Insight Generation | ✅ Done (Day 2) | None — bilingual BM/English narrative, 5W1H, stored in `analysis_results`. Key file: `backend/ai/narrative.py` |
+| 10 | Smart Recommendations | ✅ Done (Day 2) | None — merged with #9, recommendations array with priority + BM/EN text |
+| 11 | Predictive Risk Scoring | ✅ Done (Day 5) | Built: weighted flag-sum scoring (0–100) + historical Z-score trend model + next-quarter district risk forecast (`backend/ml/risk_score.py`, `backend/ml/zscore_history.py`). `POST /risk/score` + `POST /risk/forecast` live. |
+| 12 | Smart Data Correction Suggestions | ✅ Done (Day 5) | Built: IsolationForest anomaly flagging + 3×IQR median suggestion + pattern classifier — `_detect_decimal_shift`, `_detect_transposition`, `_detect_column_swap`, `_classify_error_type` (`backend/ml/corrections.py`). Every suggestion now carries `pattern` + `error_type`. |
+| 13 | Natural Language Querying | ⚠️ Partial (Day 2) | Built: BM/English query → pandas exec → bilingual answer (`backend/ai/nlq.py`). **Missing:** auto-generated chart attached to answer (frontend, Day 6). |
+| 14 | Cross-Dataset Entity Resolution | ⚠️ Partial (Day 5) | `entity_linkage` table created (SQLAlchemy model + Alembic migration `0003`). Stores IC, source_type, dataset_id, match_confidence. MVP linkage logic deferred — full probabilistic matching is post-v1. |
+| 15 | Automated Report Generation | ⚠️ Partial (Day 5) | Built: `/report/pptx` + `/report/pdf` + indicator table slide/section by district + methodology appendix (`backend/export/report.py`). `kpi_result` optional param added to both builders. **Still missing:** embedded charts, KKM quarterly format/branding — blocked on MOH template (Open Item #7). |
+| 16 | Benchmarking & Target Tracking | ✅ Done (Day 5) | Built: RAG vs NPAN national targets + WHO Global Targets 2025 (`who_target`, `who_status`, `gap_to_who`) + `compute_trajectory_narratives` with bilingual On Track/At Risk/Off Track narrative per district (`backend/eda/kpi.py`). `POST /kpi/dashboard` + `POST /kpi/trajectory` live. |
 
 ---
 
@@ -341,6 +341,10 @@ These items block the first hour of development if unresolved:
 ### Day 3 — Data Correction + Report Generation (6h)
 **Goal:** ML correction suggestions live. One-click PDF/PPTX export.
 
+> **Delivered (2026-05-13):** Feature #12 — IsolationForest anomaly detection + 3×IQR correction suggestions (`backend/ml/corrections.py`, 8 tests). Feature #15 — PDF/PPTX builders with executive summary + quality metrics + recommendations (`backend/export/report.py`, 6 tests). `/ml/suggest`, `/report/pptx`, `/report/pdf` endpoints live.
+>
+> **Gap vs spec:** #12 detects statistical outliers but does not classify error type (decimal shift / transposition / column swap). #15 missing: indicator tables by state/district, embedded charts, methodology appendix, KKM quarterly format/branding. Gap work moved to Day 5.
+
 **Morning (3h):**
 - Feature #12: ML correction suggestions on top of `outliers.py` — detect decimal shifts, digit transpositions, column swaps; classify outlier type; surface reasoning per suggestion. Row-level editing UI: users can accept, reject, or manually override each suggestion inline; all edits logged to `audit_log`.
 
@@ -351,6 +355,10 @@ These items block the first hour of development if unresolved:
 ### Day 4 — Predictive Analytics + Benchmarking (6h)
 **Goal:** Risk scoring per child and district. Benchmarking dashboard live.
 
+> **Delivered (2026-05-13):** Feature #11 — weighted composite risk score (0–100) per child, Low/Medium/High tiers, district aggregation, Senarai Kanak-kanak Berisiko (`backend/ml/risk_score.py`, 8 tests). Feature #16 — RAG KPI dashboard vs NPAN targets, per-district breakdown (`backend/eda/kpi.py`, 11 tests). `/risk/score`, `/kpi/dashboard` endpoints live. Architecture docs updated to Day 4.
+>
+> **Gap vs spec:** #11 is present-state only — no historical model or next-quarter forecast (requires `zscore_archive`). #16 missing WHO targets, historical self-comparison, and AI trajectory narrative. Gap work moved to Day 5.
+
 **Morning (3h):**
 - Feature #11: Predictive risk scoring — child-level malnutrition risk using historical Z-scores + demographics; district-level early warning for KKM threshold breaches next quarter; output risk score column + "Senarai Kanak-kanak Berisiko"; explain each score
 
@@ -358,16 +366,26 @@ These items block the first hour of development if unresolved:
 - Feature #16: Benchmarking — district/state vs national KPIs + WHO targets + historical self; traffic-light dashboard (On Track / At Risk / Off Track); AI trajectory narrative per district/state
 - **SE laptop test:** Threshold logic, alert generation, narrative accuracy; full pipeline with synthetic historical data
 
-### Day 5 — Entity Resolution, Multi-Dataset & Schema AI (6h)
-**Goal:** MVP entity resolution. Multi-dataset workflow live. Column mapping upgraded to all 3 AI scenarios.
+### Day 5 — Entity Resolution, Multi-Dataset, Schema AI + Gap Closure (6h)
+**Goal:** MVP entity resolution. Multi-dataset workflow live. Column mapping upgraded to all 3 AI scenarios. Gap work from Days 3–4 closed.
+
+> **Delivered (2026-05-14):** DB foundation — 3 new SQLAlchemy models + Alembic migration `0003`: `zscore_archive`, `indicator_snapshots`, `entity_linkage`. Feature #12 gap closed — `_detect_decimal_shift`, `_detect_transposition`, `_detect_column_swap`, `_classify_error_type` wired into `backend/ml/corrections.py`; every correction suggestion now carries `pattern` + `error_type`. Feature #11 gap closed — `backend/ml/zscore_history.py`: `aggregate_zscore_archive` + `forecast_district_risk` (OLS via `numpy.polyfit`); `POST /risk/forecast` live. Feature #16 gap closed — WHO Global Targets 2025 added to KPI output + `compute_trajectory_narratives` with bilingual On Track/At Risk/Off Track narrative; `POST /kpi/trajectory` live. Feature #15 partially closed — indicator table slide/section + methodology appendix added to both PPTX and PDF builders; KKM format/branding still blocked (Open Item #7). 59 tests passing (up from 33). 6 commits.
+>
+> **Deferred from original Day 5 scope:** Multi-dataset analysis workflow (no backend/UI scaffold yet). Feature #2 AI schema upgrade (3-scenario LLM mapping). Feature #14 MVP linkage logic (table exists; matching algorithm not built). These remain Day 6 candidates.
 
 **Morning (3h):**
+- Create DB tables: `zscore_archive`, `indicator_snapshots` (required by #11 and #16 gap work), `entity_linkage` (required by #14)
+- Populate `zscore_archive` with synthetic historical data (12-month rollback, 500 children, 5 districts) — needed before #11 upgrade
 - Feature #14 (MVP): IC + DOB exact/fuzzy match across MyVASS + NCDC + KKM; detect contradictions; output unified longitudinal profile per child
 - Multi-Dataset Analysis Workflow: dataset library UI; select 2+ datasets; combined/comparative analysis; side-by-side results with trend deltas
 
 **Afternoon (3h):**
 - Feature #2 upgrade: Replace `thefuzz`-only mapping with AI-powered schema validation — all 3 scenarios; AI always-on, not fallback-only
-- **SE laptop test:** Upload 2 datasets in separate sessions → library → select both → combined analysis verified. Full end-to-end integration test all 16 features.
+- Feature #12 gap: pattern-based classifier for decimal shifts, digit transpositions, column swaps; error-type labelling (entry error / clinical / equipment) on top of existing `backend/ml/corrections.py`
+- Feature #11 upgrade: historical Z-score model for next-quarter district risk forecast (using `zscore_archive` populated in morning)
+- Feature #16 gap: add WHO targets alongside NPAN; AI trajectory narrative per district ("at current rate, will/won't meet 2027 goal")
+- Feature #15 gap: key indicator tables by state/district, methodology appendix — **🔴 BLOCKED on MOH template (Open Item #7); do not build KKM format without it**
+- **SE laptop test:** Full end-to-end integration test all 16 features at spec depth. Specifically verify: #11 next-quarter forecast, #12 error type classification, #15 indicator tables + report format, #16 trajectory narrative.
 
 > **Note:** If Day 4 or earlier finishes ahead of schedule, begin UI work (Day 6 afternoon) on Day 5 afternoon.
 
@@ -436,17 +454,17 @@ Full audit conducted 2026-05-09 across all 6 days.
 
 | # | Item | Blocking |
 |---|------|---------|
-| 1 | SLM model selection | Day 1 — must decide before Day 1 |
+| 1 | ~~SLM model selection~~ | ✅ Resolved — Ollama Docker service, port 11435, running on RTX 5060 |
 | 2 | Client predefined business rules (full list) | Feature #5 |
 | 3 | Schema structure for Admin Data (1) and (2) | Post-v1 |
 | 4 | KKM design assets and branding files | Day 6 — need fallback if not received |
 | 5 | Feature count confirmation (16 doc vs 18 verbal) | Product spec |
-| 6 | Database choice — PostgreSQL vs SQLite vs DuckDB | Day 1 persistence layer |
-| 7 | MOH quarterly report template/example from client | Day 3 Feature #15 |
+| 6 | ~~Database choice~~ | ✅ Resolved — PostgreSQL 16 + SQLAlchemy 2 + Alembic (migrations in `alembic/versions/`) |
+| 7 | MOH quarterly report template/example from client | 🔴 STILL OPEN — indicator tables + methodology appendix shipped without it (Day 5). KKM quarterly format/branding and embedded charts remain blocked until template received. |
 | 8 | Traffic-light KPI threshold definitions | Day 4 Feature #16 |
 | 9 | Risk score model architecture — rules vs ML vs LLM | Day 4 Feature #11 |
-| 10 | 5W1H output schema — exact JSON structure | Day 2 before coding |
-| 11 | NLQ sandboxing strategy for pandas exec | Day 2 Feature #13 |
+| 10 | ~~5W1H output schema~~ | ✅ Resolved — implemented in `backend/ai/narrative.py`: `executive_summary`, `insights_5w1h` (who/what/when/where/why/how × bm/en), `recommendations[]` |
+| 11 | ~~NLQ sandboxing strategy~~ | ✅ Resolved — `backend/ai/sandbox.py` sandboxes pandas execution |
 | 12 | Bilingual infrastructure — local transformer vs API, BM domain glossary | Day 2 BM output |
 | 13 | Full KKM staff workflow definition for SE acceptance test | Day 6 final test |
 | 14 | Docker Compose networking spec | Day 1 Docker skeleton |
@@ -467,4 +485,6 @@ Full audit conducted 2026-05-09 across all 6 days.
 
 *Generated 2026-05-09. Based on verbal briefing, feature review session, codebase audit, and 6-day planning session.*
 *Updated 2026-05-11: Section 3.1, 5.1, and Day 1 timeline updated to reflect `data-cleaning-tool-new` as the current reference codebase.*
+*Updated 2026-05-13: Section 3.2 updated with actual build status and spec gaps after Day 4 execution. Delivery notes added to Days 3 and 4. Day 5 scope updated to include gap closure for #11, #12, #15, #16 and new DB tables (`zscore_archive`, `indicator_snapshots`, `entity_linkage`). Open Items #1, #6, #10, #11 closed. Open Item #7 escalated to critical.*
+*Updated 2026-05-14: Section 3.2 updated to Day 5 status. Features #11, #12, #16 marked Done. Feature #14 marked Partial (table only). Feature #15 marked Partial (indicator tables + methodology done; KKM format still blocked). Day 5 delivery note added. Open Item #7 status updated. 59 tests passing. New endpoints: `POST /risk/forecast`, `POST /kpi/trajectory`.*
 *Source files: `SmartDQC_Brief_Summary.md`, `SmartDQC_BP_KKM_Proposed Features.docx`, `data-cleaning-tool-new` codebase audit.*

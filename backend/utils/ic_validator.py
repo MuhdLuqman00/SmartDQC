@@ -90,10 +90,34 @@ def analyze_and_deduplicate_ids(df: pd.DataFrame, report: dict):
     if "id" not in df.columns:
         return df, df.copy()
 
-    results = df["id"].apply(validate_ic)
-    df["id_cleaned"] = [r["cleaned"] for r in results]
-    df["id_type"]    = [r["type"]    for r in results]
-    df["is_valid_ic"] = df["id_type"] == "valid_ic"
+    id_series = df["id"].fillna("").astype(str).str.strip()
+
+    # Fast path: vectorized check for clean 12-digit ICs (covers ~80% of rows)
+    fast_mask = id_series.str.match(r"^\d{12}$", na=False)
+    mm = pd.to_numeric(id_series.str[2:4], errors="coerce")
+    dd = pd.to_numeric(id_series.str[4:6], errors="coerce")
+    valid_date_mask = fast_mask & (mm >= 1) & (mm <= 12) & (dd >= 1) & (dd <= 31)
+
+    id_cleaned = pd.Series(index=df.index, dtype=object)
+    id_type    = pd.Series("", index=df.index, dtype=str)
+    is_valid   = pd.Series(False, index=df.index, dtype=bool)
+
+    id_cleaned[fast_mask]    = id_series[fast_mask]
+    id_type[valid_date_mask] = "valid_ic"
+    id_type[fast_mask & ~valid_date_mask] = "invalid_ic"
+    is_valid[valid_date_mask] = True
+
+    # Slow path: apply validate_ic only on rows that don't match the clean pattern
+    slow_mask = ~fast_mask
+    if slow_mask.any():
+        slow_results = df.loc[slow_mask, "id"].apply(validate_ic)
+        id_cleaned[slow_mask] = [r["cleaned"] for r in slow_results]
+        id_type[slow_mask]    = [r["type"]    for r in slow_results]
+        is_valid[slow_mask]   = [r["valid"]   for r in slow_results]
+
+    df["id_cleaned"]  = id_cleaned
+    df["id_type"]     = id_type
+    df["is_valid_ic"] = is_valid
 
     type_counts     = df["id_type"].value_counts().to_dict()
     unique_children = int(df[df["is_valid_ic"]]["id_cleaned"].nunique())
