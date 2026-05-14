@@ -1844,6 +1844,78 @@ async def ai_nlq(req: NLQRequest):
     return result
 
 
+# ── Multi-Dataset Comparison ─────────────────────────────────────────────────
+
+from backend.eda.compare import compare_datasets, _INDICATOR_KEYS
+
+
+@app.get("/datasets")
+async def list_datasets():
+    """List all datasets in the library."""
+    from backend.db.models import Dataset
+    from backend.db.init_db import SessionLocal
+
+    with SessionLocal() as db:
+        datasets = db.query(Dataset).order_by(Dataset.created_at.desc()).all()
+        return [
+            {
+                "id":          ds.id,
+                "name":        ds.name,
+                "filename":    ds.filename,
+                "source_type": ds.source_type,
+                "row_count":   ds.row_count,
+                "created_at":  ds.created_at.isoformat(),
+            }
+            for ds in datasets
+        ]
+
+
+class DatasetCompareRequest(BaseModel):
+    dataset_ids: list[str]
+
+
+@app.post("/datasets/compare")
+async def datasets_compare(req: DatasetCompareRequest):
+    """Compare 2+ datasets side-by-side. Returns quality and indicator deltas."""
+    from backend.db.models import Dataset, AnalysisResult
+    from backend.db.init_db import SessionLocal
+
+    if len(req.dataset_ids) < 2:
+        raise HTTPException(400, "Provide at least 2 dataset_ids.")
+
+    summaries = []
+    with SessionLocal() as db:
+        for ds_id in req.dataset_ids:
+            ds = db.get(Dataset, ds_id)
+            if ds is None:
+                continue
+            ar = (
+                db.query(AnalysisResult)
+                .filter(AnalysisResult.dataset_id == ds_id)
+                .order_by(AnalysisResult.created_at.desc())
+                .first()
+            )
+            quality_score = None
+            indicators    = {}
+            if ar and ar.result_json:
+                rj            = ar.result_json
+                quality_score = rj.get("quality", {}).get("overall_score")
+                ind           = rj.get("indicators", {})
+                for k in _INDICATOR_KEYS:
+                    if k in ind:
+                        indicators[k] = ind[k]
+            summaries.append({
+                "dataset_id":    ds_id,
+                "source_type":   ds.source_type or "unknown",
+                "quality_score": quality_score,
+                "indicators":    indicators,
+                "name":          ds.name,
+                "created_at":    ds.created_at.isoformat(),
+            })
+
+    return compare_datasets(summaries)
+
+
 # ── Entity Resolution ────────────────────────────────────────────────────────
 
 from backend.ml.entity import link_records, persist_linkage
