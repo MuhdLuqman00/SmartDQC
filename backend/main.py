@@ -2100,3 +2100,70 @@ def list_sessions(db=Depends(get_db)):
         }
         for r in rows
     ]
+
+
+# ── Settings API ──────────────────────────────────────────────────────────────
+
+import json as _json
+
+_DEFAULT_THRESHOLDS = {
+    "missing_rate_warn": 0.05,
+    "missing_rate_fail": 0.15,
+    "duplicate_rate_warn": 0.02,
+    "duplicate_rate_fail": 0.10,
+    "outlier_zscore_threshold": 3.0,
+}
+
+_DEFAULT_RULES: dict = {k: {"enabled": True} for k in [
+    "duplicate_check", "missing_value_check", "ic_format_check",
+    "age_range_check", "height_range_check", "weight_range_check",
+    "bmi_range_check", "date_format_check", "gender_value_check",
+]}
+
+
+def _get_setting(key: str, default, db) -> dict:
+    from .db.models import AppSetting
+    row = db.query(AppSetting).filter_by(key=key).first()
+    if row:
+        return _json.loads(row.value)
+    return default
+
+
+def _set_setting(key: str, value, db) -> None:
+    from .db.models import AppSetting
+    existing = db.query(AppSetting).filter_by(key=key).first()
+    if existing:
+        existing.value = _json.dumps(value)
+    else:
+        db.add(AppSetting(key=key, value=_json.dumps(value)))
+    db.commit()
+
+
+@app.get("/settings/thresholds")
+def get_thresholds(db=Depends(get_db)):
+    return _get_setting("threshold.all", _DEFAULT_THRESHOLDS, db)
+
+
+@app.post("/settings/thresholds")
+def post_thresholds(updates: dict, db=Depends(get_db)):
+    current = _get_setting("threshold.all", _DEFAULT_THRESHOLDS, db)
+    current.update(updates)
+    _set_setting("threshold.all", current, db)
+    return current
+
+
+@app.get("/settings/rules")
+def get_rules(db=Depends(get_db)):
+    return _get_setting("rules.all", _DEFAULT_RULES, db)
+
+
+@app.post("/settings/rules/toggle")
+def toggle_rule(body: dict, db=Depends(get_db)):
+    rule = body.get("rule")
+    enabled = body.get("enabled", True)
+    current = _get_setting("rules.all", _DEFAULT_RULES, db)
+    if rule not in current:
+        raise HTTPException(status_code=404, detail=f"Rule '{rule}' not found")
+    current[rule]["enabled"] = enabled
+    _set_setting("rules.all", current, db)
+    return current
