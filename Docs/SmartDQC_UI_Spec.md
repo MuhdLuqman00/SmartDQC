@@ -361,3 +361,96 @@ Compare 2+ historical dataset summaries side-by-side; view indicator deltas and 
 - `DatasetSelector` — checkbox list
 - `ComparisonTable` — indicator rows, dataset columns, delta column
 - `TrendBadge` — coloured arrow badge
+
+---
+
+## §12 — History Page (`/history`)
+
+### Purpose
+Browse all past cleaning sessions; reload or re-download cleaned output.
+
+### API
+`GET /sessions` → `[{ cache_id, filename, source_type, row_count, quality_score }]`
+
+### Layout
+- Filter bar: source_type dropdown, quality score range slider
+- Table: filename | source | rows | quality | actions
+
+### Row Actions
+- "Buka Semula" → navigate to /cleaning?cache_id=X
+- "Muat Turun" → GET /clean/export?cache_id=X (re-download)
+
+### Components
+- `SessionHistoryTable` — sortable, filterable
+- `ReloadButton` — navigates to /cleaning
+
+---
+
+## §13 — Settings Page (`/settings`) — Admin Only
+
+### Purpose
+Tune quality thresholds and toggle cleaning rules; changes persisted in `app_settings` DB table.
+
+### APIs
+- `GET /settings/thresholds` → `{ missing_rate_warn, missing_rate_fail, duplicate_rate_warn, duplicate_rate_fail, outlier_zscore_threshold }`
+- `POST /settings/thresholds` — body: partial threshold dict
+- `GET /settings/rules` → `{ rule_name: { enabled: bool } }`
+- `POST /settings/rules/toggle` — body: `{ rule: string, enabled: bool }`
+
+### Layout
+- Two cards: "Ambang Kualiti" (thresholds) | "Peraturan Pembersihan" (rules)
+- Thresholds card: numeric inputs + "Simpan" button
+- Rules card: labelled toggle switches (9 total)
+
+### Default Thresholds
+| Key                      | Default |
+|--------------------------|---------|
+| missing_rate_warn        | 0.05    |
+| missing_rate_fail        | 0.15    |
+| duplicate_rate_warn      | 0.02    |
+| duplicate_rate_fail      | 0.10    |
+| outlier_zscore_threshold | 3.0     |
+
+### Components
+- `ThresholdForm` — controlled numeric inputs
+- `RuleToggleList` — toggle switch per rule
+
+---
+
+## §14 — Audit Log Page (`/audit`) — Admin Only
+
+### Purpose
+Browse system action history (uploads, cleaning runs, report exports).
+
+### API
+`GET /audit/log?dataset_id=&limit=100` → `[{ id, action, dataset_id, detail, user_id, created_at }]`
+
+### Action Types
+| Code           | Meaning                   |
+|----------------|---------------------------|
+| upload.preview | File uploaded for preview |
+| clean.run      | Cleaning pipeline run     |
+| report.pdf     | PDF report exported       |
+| report.pptx    | PPTX report exported      |
+
+### Layout
+- Filter bar: dataset_id input, date range, action type selector
+- Table: id | created_at | action | detail | user_id
+
+### Components
+- `AuditTable` — timestamped, sortable
+- `ActionTypeBadge` — colour-coded by action category
+
+---
+
+## §15 — Open Items
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Malaysia SVG map source for choropleth | Open |
+| 2 | Finalise WHO 2024 stunting/wasting targets per district | Open |
+| 3 | Restyle 4 teal components to navy palette | Open |
+| 4 | Confirm MyVASS API field names for live data pull | Open |
+| 5 | PPTX slide layout approval from KKM stakeholder | Open |
+| 6 | User management page (add/deactivate users) | Deferred (post-v1) |
+| 7 | Multi-language UI toggle (BM/EN) | Deferred (post-v1) |
