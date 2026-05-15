@@ -9,7 +9,6 @@ import { ExplorerPage }       from './pages/ExplorerPage';
 import { QualityPage }        from './pages/QualityPage';
 import { CleaningPage }       from './pages/CleaningPage';
 import { AIPage }             from './pages/AIPage';
-import { GeoPage }            from './pages/GeoPage';
 import { ReportsPage }        from './pages/ReportsPage';
 import { DatasetLibraryPage } from './pages/DatasetLibraryPage';
 import { HistoryPage }        from './pages/HistoryPage';
@@ -40,7 +39,6 @@ export function App(): JSX.Element {
           <Route path="/quality"  element={<QualityPage />} />
           <Route path="/cleaning" element={<CleaningPage />} />
           <Route path="/ai"       element={<AIPage />} />
-          <Route path="/geo"      element={<GeoPage />} />
           <Route path="/reports"  element={<ReportsPage />} />
           <Route path="/datasets" element={<DatasetLibraryPage />} />
           <Route path="/history"  element={<HistoryPage />} />

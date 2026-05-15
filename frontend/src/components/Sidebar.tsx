@@ -39,8 +39,7 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
     {
       label: 'AI',
       items: [
-        { path: '/ai',  label: t('Smart Analysis', 'Analisis Pintar'), icon: '✧' },
-        { path: '/geo', label: t('Geo & Forecast', 'Geo & Ramalan'),   icon: '◈' },
+        { path: '/ai', label: t('Smart Analysis', 'Analisis Pintar'), icon: '✧' },
       ],
     },
     {
