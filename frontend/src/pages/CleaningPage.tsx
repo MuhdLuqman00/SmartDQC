@@ -38,6 +38,7 @@ export function CleaningPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useLang();
+  const { setCurrentCacheId } = useSession();
   const cacheId = searchParams.get('cache_id') ?? '';
 
   const ACTION_LABELS: Record<string, string> = {
@@ -62,6 +63,8 @@ export function CleaningPage() {
       fd.append('data_type', 'myvass'); // Default type
       const res = await api.post<CleanResponse>('/clean/run', fd);
       setResult(res.data);
+      // Set the cache_id in global session context
+      setCurrentCacheId(res.data.cache_id);
     } catch {
       setError(t('Failed to run cleaning.', 'Gagal menjalankan pembersihan.'));
     } finally {

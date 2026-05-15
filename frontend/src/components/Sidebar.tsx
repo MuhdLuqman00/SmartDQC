@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useLang } from '../context/LanguageContext';
+import { useSession } from '../context/SessionContext';
 
 interface NavItem { path: string; label: string; icon: string; adminOnly?: boolean; }
 
@@ -9,7 +10,17 @@ interface Props { role?: string; collapsed: boolean; onToggle: () => void; }
 export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
   const location = useLocation();
   const { t } = useLang();
+  const { currentCacheId } = useSession();
   const [hoveredPath, setHoveredPath] = useState<string | null>(null);
+  
+  // Helper to build link with cache_id
+  const buildLink = (path: string): string => {
+    if (!currentCacheId) return path;
+    // Don't add cache_id to pages that don't need it
+    const noCachePages = ['/upload', '/explorer', '/datasets', '/history', '/settings', '/audit'];
+    if (noCachePages.includes(path)) return path;
+    return `${path}?cache_id=${currentCacheId}`;
+  };
 
   const GROUPS: { label: string; items: NavItem[] }[] = [
     {
@@ -96,9 +107,10 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
               {visible.map(item => {
                 const active = isActive(item.path);
                 const hov = hoveredPath === item.path;
+                const linkTo = buildLink(item.path);
                 return (
                   <Link
-                    key={item.path} to={item.path}
+                    key={item.path} to={linkTo}
                     onMouseEnter={() => setHoveredPath(item.path)}
                     onMouseLeave={() => setHoveredPath(null)}
                     title={collapsed ? item.label : undefined}
