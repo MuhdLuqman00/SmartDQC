@@ -136,13 +136,23 @@ export function UploadPage() {
     } finally { setLoading(false); }
   }, [sourceType]);
 
+  // Map frontend source types to backend data types
+  const mapSourceType = (type: SourceType): string => {
+    const mapping: Record<SourceType, string> = {
+      'myvass': 'myvass',
+      'klinik': 'kpm',  // Map clinic data to KPM format
+      'auto': 'myvass', // Default to myvass for auto-detect
+    };
+    return mapping[type] || 'myvass';
+  };
+
   const continueClean = async (): Promise<void> => {
     if (!preview) return;
     setLoading(true);
     try {
       const fd = new FormData();
       fd.append('cache_id', preview.cache_id);
-      fd.append('data_type', sourceType);
+      fd.append('data_type', mapSourceType(sourceType));
       await api.post('/clean/run', fd);
       navigate(`/cleaning?cache_id=${preview.cache_id}`);
     } catch {
