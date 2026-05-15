@@ -56,7 +56,10 @@ export function CleaningPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.post<CleanResponse>('/clean/run', { cache_id: cid });
+      const fd = new FormData();
+      fd.append('cache_id', cid);
+      fd.append('data_type', 'myvass'); // Default type
+      const res = await api.post<CleanResponse>('/clean/run', fd);
       setResult(res.data);
     } catch {
       setError(t('Failed to run cleaning.', 'Gagal menjalankan pembersihan.'));
