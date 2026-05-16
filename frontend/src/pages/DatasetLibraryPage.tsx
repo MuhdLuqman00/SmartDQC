@@ -24,6 +24,7 @@ export function DatasetLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [comparing, setComparing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [comparison, setComparison] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
@@ -48,6 +49,23 @@ export function DatasetLibraryPage() {
     } finally { setComparing(false); }
   };
 
+  const handleDelete = async () => {
+    if (selected.size < 1) return;
+    const ids = Array.from(selected);
+    if (!window.confirm(
+      t(`Delete ${ids.length} dataset(s)? This cannot be undone.`,
+        `Padam ${ids.length} dataset? Tindakan ini tidak boleh dibatalkan.`))) return;
+    setDeleting(true);
+    try {
+      await api.post('/datasets/delete', { dataset_ids: ids });
+      const r = await api.get<Dataset[]>('/datasets');
+      setDatasets(r.data);
+      setSelected(new Set());
+    } catch {
+      window.alert(t('Delete failed.', 'Padam gagal.'));
+    } finally { setDeleting(false); }
+  };
+
   if (loading) return <div style={{ color: 'var(--text-muted)', padding: 40 }}>{t('Loading…', 'Memuatkan…')}</div>;
   if (!datasets.length) return (
     <EmptyState icon={<BookOpen size={48} />} title={t('No datasets yet', 'Tiada dataset lagi')}
@@ -57,12 +75,18 @@ export function DatasetLibraryPage() {
 
   return (
     <div>
-      {selected.size >= 2 && (
+      {selected.size >= 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' }}>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{selected.size} {t('selected', 'dipilih')}</span>
-          <button onClick={handleCompare} disabled={comparing}
-            style={{ background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: comparing ? 0.6 : 1 }}>
-            {comparing ? t('Comparing…', 'Sedang membandingkan…') : t('Compare', 'Bandingkan')}
+          {selected.size >= 2 && (
+            <button onClick={handleCompare} disabled={comparing}
+              style={{ background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: comparing ? 0.6 : 1 }}>
+              {comparing ? t('Comparing…', 'Sedang membandingkan…') : t('Compare', 'Bandingkan')}
+            </button>
+          )}
+          <button onClick={handleDelete} disabled={deleting}
+            style={{ background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
+            {deleting ? t('Deleting…', 'Sedang memadam…') : t('Delete selected', 'Padam dipilih')}
           </button>
           <button onClick={() => setSelected(new Set())} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
             {t('Clear', 'Batal')}
