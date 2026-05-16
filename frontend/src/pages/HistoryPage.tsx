@@ -63,7 +63,7 @@ export function HistoryPage() {
                   <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{s.filename}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                     {s.source_type && <span style={{ textTransform: 'uppercase', fontWeight: 600, marginRight: 8 }}>{s.source_type}</span>}
-                    {s.row_count.toLocaleString()} {t('rows', 'baris')}
+                    {Number(s.row_count).toLocaleString()} {t('rows', 'baris')}
                     {s.created_at && <> · {new Date(s.created_at).toLocaleString()}</>}
                   </div>
                 </div>

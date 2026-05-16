@@ -417,23 +417,73 @@ async def upload_preview(
 # ─── MAPPING VALIDATION ───────────────────────────────────────────────────────
 
 
+class MappingBody(BaseModel):
+    """JSON body sent by the v2 frontend: { "raw_column": "standard_field", … }."""
+
+    mapping: dict[str, str] = {}
+
+
+def _resolve_cached_df(cache_id: Optional[str]) -> pd.DataFrame:
+    """Resolve a DataFrame from the in-memory upload cache by cache_id.
+
+    The v2 frontend uploads once via /upload/preview (which caches the df and
+    returns a cache_id), then references that id on every subsequent wizard
+    step instead of re-uploading the file.
+    """
+    if not cache_id:
+        raise HTTPException(400, "cache_id is required")
+    entry = _cache_get(cache_id)
+    if entry is None:
+        raise HTTPException(
+            404, f"Cache ID '{cache_id}' not found — please re-upload the file."
+        )
+    return entry["df"].copy()
+
+
+# Stat keys that are survivor counts / transformations, not data-quality issues.
+_NON_ISSUE_STAT_KEYS = {"final_count", "raw_count", "valid_records", "total_dropped"}
+
+
+def _summarise_cleaning(stats: dict, rows_before: int, rows_after: int) -> dict:
+    """Derive a quality score, applied-rule list, and top issues from a
+    cleaner's stats dict (per-rule removed/flagged row counts).
+
+    Generic across kpm/myvass/ncdc/kkm cleaners: any positive-integer stat
+    that isn't a survivor/transformation count is treated as an issue+rule.
+    """
+    score = round(rows_after / rows_before * 100, 1) if rows_before else 0.0
+    score = max(0.0, min(100.0, score))
+
+    issues: list[dict] = []
+    for key, val in stats.items():
+        if isinstance(val, bool) or not isinstance(val, int) or val <= 0:
+            continue
+        if key in _NON_ISSUE_STAT_KEYS or key.startswith("standardized_"):
+            continue
+        label = key.replace("_", " ").strip().capitalize()
+        pct = (val / rows_before * 100) if rows_before else 0
+        severity = "critical" if pct >= 10 else "warning" if pct >= 1 else "info"
+        issues.append({"description": label, "severity": severity, "count": val})
+
+    issues.sort(key=lambda i: i["count"], reverse=True)
+    return {
+        "quality_score": score,
+        "rules_applied": [i["description"] for i in issues],
+        "top_issues": issues[:5],
+    }
+
+
 @app.post("/mapping/validate")
 async def validate_mapping(
-    file: UploadFile = File(...),
-    mapping: str = "",
-    sheet: Optional[str] = None,
+    cache_id: Optional[str] = Query(None),
+    body: Optional[MappingBody] = None,
 ):
-    content = await file.read()
-    filename = file.filename or ""
-    try:
-        df, _ = read_file(content, filename, sheet)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    df = _resolve_cached_df(cache_id)
 
-    try:
-        mapping_dict = json.loads(mapping) if mapping else {}
-    except Exception:
-        raise HTTPException(400, "Mapping JSON tidak sah")
+    # Frontend sends { raw_column: standard_field }; the validation logic
+    # below expects { standard_field: raw_column }, so invert it.
+    raw_to_std = body.mapping if body else {}
+    mapping_dict = {std: raw for raw, std in raw_to_std.items() if std}
 
     available_cols = set(df.columns.tolist())
     errors, warnings, ok = [], [], []
@@ -979,19 +1029,90 @@ import uuid as _uuid
 
 from .eda.cleaning import clean_data, detect_data_type
 
-# ── In-memory cache for cleaned DataFrames (avoids re-upload for download) ────
+# ── Cleaned-DataFrame cache: in-memory hot tier + durable disk tier ──────────
+# The v2 frontend references uploaded/cleaned data by cache_id across many
+# steps (wizard, Explorer, KPI map, AI). An in-memory dict alone loses every
+# cache_id on restart, breaking those pages. Persist each entry to disk so a
+# cache_id survives a process restart and is rehydrated on demand.
+import os as _os
+import pickle as _pickle
+from pathlib import Path as _Path
+
 _cleaned_cache: dict[str, dict] = {}  # key -> {"df": DataFrame, "stats": dict}
-_CACHE_MAX = 10  # keep at most 10 entries
+_CACHE_MAX = 10  # keep at most 10 entries hot in memory
+_DISK_CACHE_MAX = 100  # keep at most 100 entries on disk
+
+_CACHE_DIR = _Path(
+    _os.environ.get("SMARTDQC_CACHE_DIR")
+    or (_Path(__file__).resolve().parent.parent / "data" / "cache")
+)
+try:
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as _exc:  # pragma: no cover - best effort
+    logger.warning("Could not create cache dir %s: %s", _CACHE_DIR, _exc)
+
+
+def _cache_path(key: str) -> "_Path":
+    return _CACHE_DIR / f"{key}.pkl"
+
+
+def _prune_disk_cache() -> None:
+    """Keep the disk cache bounded by deleting the oldest files."""
+    try:
+        files = sorted(
+            _CACHE_DIR.glob("*.pkl"), key=lambda p: p.stat().st_mtime
+        )
+        for stale in files[:-_DISK_CACHE_MAX] if len(files) > _DISK_CACHE_MAX else []:
+            stale.unlink(missing_ok=True)
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("Disk cache prune failed: %s", exc)
 
 
 def _cache_cleaned(df: pd.DataFrame, stats: dict | None = None) -> str:
-    """Store cleaned DF + stats in cache, return a UUID key."""
+    """Store cleaned DF + stats in the cache (memory + disk), return a key."""
     key = str(_uuid.uuid4())
     if len(_cleaned_cache) >= _CACHE_MAX:
-        oldest = next(iter(_cleaned_cache))
-        _cleaned_cache.pop(oldest, None)
-    _cleaned_cache[key] = {"df": df, "stats": stats or {}}
+        _cleaned_cache.pop(next(iter(_cleaned_cache)), None)
+    payload = {"df": df, "stats": stats or {}}
+    _cleaned_cache[key] = payload
+    try:
+        with _cache_path(key).open("wb") as fh:
+            _pickle.dump(payload, fh, protocol=_pickle.HIGHEST_PROTOCOL)
+        _prune_disk_cache()
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("Cache persist failed for %s: %s", key, exc)
     return key
+
+
+def _is_valid_cache_key(key: str) -> bool:
+    """Cache keys are always uuid4 strings. Reject anything else so a
+    user-supplied cache_id can never escape _CACHE_DIR (path traversal →
+    pickle.load of an arbitrary file)."""
+    try:
+        _uuid.UUID(str(key))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def _cache_get(key: str) -> dict | None:
+    """Resolve a cache entry by key: memory first, then rehydrate from disk."""
+    if not _is_valid_cache_key(key):
+        return None
+    if key in _cleaned_cache:
+        return _cleaned_cache[key]
+    path = _cache_path(key)
+    if path.exists():
+        try:
+            with path.open("rb") as fh:
+                payload = _pickle.load(fh)
+            if len(_cleaned_cache) >= _CACHE_MAX:
+                _cleaned_cache.pop(next(iter(_cleaned_cache)), None)
+            _cleaned_cache[key] = payload  # rehydrate hot tier
+            return payload
+        except Exception as exc:  # pragma: no cover - best effort
+            logger.warning("Cache load failed for %s: %s", key, exc)
+    return None
 
 
 def _persist_session(
@@ -1079,7 +1200,7 @@ def _resolve_source(
 ) -> "pd.DataFrame":
     """Resolve a join source to a DataFrame from either a raw upload or the cleaned cache."""
     if cache_id is not None:
-        entry = _cleaned_cache.get(cache_id)
+        entry = _cache_get(cache_id)
         if entry is None:
             raise HTTPException(
                 400, f"Cache ID '{cache_id}' not found — re-run cleaning first."
@@ -1204,17 +1325,15 @@ async def detect_type_endpoint(
 
 @app.post("/clean/quality-check")
 async def quality_check_endpoint(
-    file: UploadFile = File(...),
-    data_type: str = "myvass",
-    sheet: Optional[str] = None,
+    cache_id: Optional[str] = Query(None),
+    body: Optional[MappingBody] = None,
 ):
-    """Get raw data quality analysis before cleaning."""
-    content = await file.read()
-    filename = file.filename or ""
-    try:
-        df, _ = read_file(content, filename, sheet)
-    except Exception as e:
-        raise HTTPException(400, str(e))
+    """Get raw data quality analysis before cleaning (cache_id-based).
+
+    `body` (the proposed mapping) is accepted for contract parity with the
+    frontend but not used — quality is computed on the raw cached columns.
+    """
+    df = _resolve_cached_df(cache_id)
 
     # Basic quality stats
     quality = {
@@ -1269,55 +1388,71 @@ async def quality_check_endpoint(
         round((filled_cells / total_cells) * 100, 1) if total_cells > 0 else 0
     )
 
+    # Frontend Step 3 expects a quality_score + issues list. Use completeness
+    # as the pre-clean quality proxy and per-column nulls as the issues.
+    col_issues: list[dict] = []
+    for c in quality["columns"]:
+        nc = int(c.get("null_count", 0) or 0)
+        if nc <= 0:
+            continue
+        np_pct = c.get("null_percent", 0) or 0
+        severity = (
+            "critical" if np_pct >= 50 else "warning" if np_pct >= 10 else "info"
+        )
+        col_issues.append(
+            {
+                "description": f"Column '{c['name']}' is {np_pct}% empty",
+                "severity": severity,
+                "count": nc,
+            }
+        )
+    col_issues.sort(key=lambda i: i["count"], reverse=True)
+    quality["quality_score"] = quality["overall_completeness"]
+    quality["issues"] = col_issues[:5]
+
     return JSONResponse(content=json_safe(quality))
 
 
 @app.post("/clean/run")
 async def clean_run_endpoint(
-    file: UploadFile = File(default=None),
-    cache_id: str = Form(default=None),
-    data_type: str = Form("myvass"),
-    sheet: Optional[str] = Form(None),
+    cache_id: Optional[str] = Query(None),
+    data_type: str = Query("myvass"),
+    body: Optional[MappingBody] = None,
     db=Depends(get_db),
 ):
     """Run the cleaning process and return cleaned data with statistics.
 
-    Accepts either:
-    1. A file upload directly (file parameter)
-    2. A cache_id referencing previously uploaded data
+    The v2 frontend references the previously uploaded data by cache_id.
+    `body` (the proposed mapping) is accepted for contract parity.
     """
-    df = None
-    filename = ""
-
-    # Try to get DataFrame from cache_id first
-    if cache_id:
-        entry = _cleaned_cache.get(cache_id)
-        if entry:
-            df = entry["df"]
-            filename = entry.get("stats", {}).get("filename", "cached_data")
-
-    # If no cache_id or not found, try file upload
-    if df is None and file:
-        content = await file.read()
-        filename = file.filename or ""
-        try:
-            df, _ = read_file(content, filename, sheet)
-        except Exception as e:
-            raise HTTPException(400, str(e))
-
-    if df is None:
-        raise HTTPException(400, "Provide either a file or a valid cache_id")
+    df = _resolve_cached_df(cache_id)
+    filename = (
+        (_cache_get(cache_id) or {})
+        .get("stats", {})
+        .get("filename", "cached_data")
+    )
 
     try:
         cleaned_df, stats = clean_data(df, data_type)
     except Exception as e:
         raise HTTPException(500, f"Cleaning error: {str(e)}")
 
+    summary = _summarise_cleaning(stats, len(df), len(cleaned_df))
+
     # Convert cleaned data to records
     cleaned_records = cleaned_df.replace({np.nan: None}).to_dict(orient="records")
 
-    # Cache cleaned DF so download doesn't need re-upload
-    new_cache_id = _cache_cleaned(cleaned_df, stats)
+    # Cache cleaned DF (durable) with enriched stats so downstream pages
+    # (Explorer, KPI map, AI narrative) can resolve it by cache_id later.
+    new_cache_id = _cache_cleaned(
+        cleaned_df,
+        {
+            **(stats or {}),
+            "filename": filename,
+            "source_type": data_type,
+            "quality_score": summary["quality_score"],
+        },
+    )
 
     try:
         _persist_session(
@@ -1325,7 +1460,11 @@ async def clean_run_endpoint(
             filename=filename,
             source_type=data_type,
             row_count=len(cleaned_df),
-            result=stats or {},
+            result={
+                **(stats or {}),
+                "quality_score": summary["quality_score"],
+                "issues": summary["top_issues"],
+            },
             db=db,
         )
     except Exception:
@@ -1345,6 +1484,9 @@ async def clean_run_endpoint(
                 "cache_id": new_cache_id,
                 "rows_before": len(df),
                 "rows_after": len(cleaned_df),
+                "quality_score": summary["quality_score"],
+                "rules_applied": summary["rules_applied"],
+                "top_issues": summary["top_issues"],
             }
         )
     )
@@ -1600,7 +1742,7 @@ async def download_cached_endpoint(
     data_type: str = Query("myvass"),
 ):
     """Download previously cleaned data from cache — no file re-upload needed."""
-    entry = _cleaned_cache.get(cache_id)
+    entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(404, "Cached data not found — please re-run cleaning.")
     cleaned_df = entry["df"]
@@ -1627,6 +1769,36 @@ async def download_cached_endpoint(
                 "Content-Disposition": f'attachment; filename="{data_type.upper()}_Cleaned_{timestamp}.csv"'
             },
         )
+
+
+# ── Cached JSON preview (for the Explorer page) ──────────────────────────────
+@app.get("/clean/preview-cached/{cache_id}")
+async def preview_cached_endpoint(
+    cache_id: str,
+    limit: int = Query(500, ge=1, le=5000),
+):
+    """Return rows from the cached cleaned dataset as JSON for the Explorer.
+
+    The Explorer no longer depends on transient in-memory frontend state — it
+    fetches by cache_id, which is durable across restarts via the disk cache.
+    """
+    entry = _cache_get(cache_id)
+    if entry is None:
+        raise HTTPException(404, "Cached data not found — please re-run cleaning.")
+    df = entry["df"]
+    rows = (
+        df.head(limit).replace({np.nan: None}).to_dict(orient="records")
+    )
+    return JSONResponse(
+        content=json_safe(
+            {
+                "columns": df.columns.tolist(),
+                "rows": rows,
+                "row_count": int(len(df)),
+                "returned": len(rows),
+            }
+        )
+    )
 
 
 # ── Dataset Join (horizontal / vertical union) ───────────────────────────────
@@ -1714,7 +1886,7 @@ async def ml_suggest_endpoint(
     cache_id: str = Query(..., description="UUID from /clean/run or /join/run"),
 ):
     """Flag anomalous rows and suggest corrections using IsolationForest."""
-    entry = _cleaned_cache.get(cache_id)
+    entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(
             404, "cache_id not found — run /clean/run first or check the UUID"
@@ -1729,7 +1901,7 @@ async def ml_suggest_endpoint(
 @app.post("/report/pptx")
 async def report_pptx_endpoint(req: ReportRequest):
     """Generate a PPTX report from EDA results and AI narrative."""
-    if _cleaned_cache.get(req.cache_id) is None:
+    if _cache_get(req.cache_id) is None:
         raise HTTPException(404, "cache_id not found — run /clean/run first")
     data = build_pptx_bytes(req.eda_result, req.narrative, kpi_result=req.kpi_result)
     return Response(
@@ -1742,7 +1914,7 @@ async def report_pptx_endpoint(req: ReportRequest):
 @app.post("/report/pdf")
 async def report_pdf_endpoint(req: ReportRequest):
     """Generate a PDF report from EDA results and AI narrative."""
-    if _cleaned_cache.get(req.cache_id) is None:
+    if _cache_get(req.cache_id) is None:
         raise HTTPException(404, "cache_id not found — run /clean/run first")
     data = build_pdf_bytes(req.eda_result, req.narrative, kpi_result=req.kpi_result)
     _log_audit(action="report.pdf", detail=f"cache_id={req.cache_id}")
@@ -1761,7 +1933,7 @@ async def risk_score_endpoint(
     cache_id: str = Query(..., description="UUID from /clean/run or /join/run"),
 ):
     """Compute per-child composite risk score (0-100) and district aggregation."""
-    entry = _cleaned_cache.get(cache_id)
+    entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(
             404, "cache_id not found — run /clean/run first or check the UUID"
@@ -1789,7 +1961,7 @@ async def kpi_dashboard_endpoint(
     district: str | None = Query(None, description="Filter by district name"),
 ):
     """Return RAG traffic-light KPI status benchmarked against Malaysian national targets."""
-    entry = _cleaned_cache.get(cache_id)
+    entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(
             404, "cache_id not found — run /clean/run first or check the UUID"
@@ -2462,7 +2634,7 @@ async def download_report_endpoint(
     data_type: str = Query("myvass"),
 ):
     """Download Data Quality Report (5-tab Excel) from cached cleaning results."""
-    entry = _cleaned_cache.get(cache_id)
+    entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(404, "Cached data not found \u2014 please re-run cleaning.")
 
@@ -2490,79 +2662,91 @@ class ReportRequest(BaseModel):
     kpi_result: dict | None = None
 
 
-class NarrativeRequest(BaseModel):
-    session_id: str
-    eda_result: dict
+class _AIBody(BaseModel):
+    """Optional JSON body for AI endpoints (frontend posts { question })."""
+
+    question: str = ""
 
 
-class NLQRequest(BaseModel):
-    session_id: str
-    query: str
+def _localize(v, lang: str = "en") -> str:
+    """Collapse a possibly-bilingual value ({bm,en}) into a plain string."""
+    if isinstance(v, dict):
+        return str(v.get(lang) or v.get("en") or v.get("bm") or "").strip()
+    if v is None:
+        return ""
+    return str(v)
+
+
+def _format_narrative(n: dict) -> str:
+    """Render the structured narrative dict into readable text for the chat UI."""
+    if not isinstance(n, dict):
+        return str(n)
+    parts: list[str] = []
+    summary = _localize(n.get("executive_summary"))
+    if summary:
+        parts.append(summary)
+    insights = n.get("insights_5w1h") or {}
+    if isinstance(insights, dict):
+        labels = {
+            "who": "Who", "what": "What", "when": "When",
+            "where": "Where", "why": "Why", "how": "How",
+        }
+        lines = [
+            f"• {labels.get(k, k.title())}: {_localize(v)}"
+            for k, v in insights.items()
+            if _localize(v)
+        ]
+        if lines:
+            parts.append("Insights (5W1H):\n" + "\n".join(lines))
+    recs = n.get("recommendations") or []
+    if isinstance(recs, list) and recs:
+        rec_lines = []
+        for r in recs:
+            if not isinstance(r, dict):
+                continue
+            action = r.get("action") or ""
+            prio = r.get("priority") or ""
+            detail = _localize(r)
+            tag = f"[{prio}] " if prio else ""
+            rec_lines.append(f"• {tag}{action}: {detail}".strip())
+        if rec_lines:
+            parts.append("Recommendations:\n" + "\n".join(rec_lines))
+    return "\n\n".join(p for p in parts if p) or "No narrative produced."
 
 
 @app.post("/ai/narrative")
-async def ai_narrative(req: NarrativeRequest, db: SASession = Depends(get_db)):
-    """Generate AI narrative (insights + recommendations) from EDA results."""
+async def ai_narrative(cache_id: str = Query(...)):
+    """Generate an AI narrative for the cleaned dataset referenced by cache_id."""
+    entry = _cache_get(cache_id)
+    if entry is None:
+        raise HTTPException(404, "cache_id not found — re-upload or re-run cleaning.")
+    df = entry["df"]
+    source_type = (entry.get("stats") or {}).get("source_type") or "myvass"
     try:
-        narrative = generate_narrative(req.eda_result)
+        eda_result = run_eda(df, {}, source_type)
+        narrative = generate_narrative(eda_result)
     except Exception as e:
         raise HTTPException(500, f"Narrative generation failed: {e}")
-
-    now = datetime.utcnow()
-    PLACEHOLDER_DATASET_ID = "00000000-0000-0000-0000-000000000000"
-    try:
-        if not db.get(Dataset, PLACEHOLDER_DATASET_ID):
-            db.add(
-                Dataset(
-                    id=PLACEHOLDER_DATASET_ID,
-                    name="__placeholder__",
-                    filename="__placeholder__",
-                    created_at=now,
-                )
-            )
-        if not db.get(DBSession, req.session_id):
-            db.add(
-                DBSession(
-                    id=req.session_id,
-                    dataset_id=PLACEHOLDER_DATASET_ID,
-                    notes=None,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-        db.add(
-            AnalysisResult(
-                id=str(uuid.uuid4()),
-                session_id=req.session_id,
-                result_type="narrative",
-                result_json=narrative,
-                created_at=now,
-            )
-        )
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        logger.warning("Failed to persist analysis_result: %s", exc)
-
-    return narrative
+    return {"narrative": _format_narrative(narrative), "raw": narrative}
 
 
 @app.post("/ai/nlq")
-async def ai_nlq(req: NLQRequest):
-    """Answer a natural language query against the cleaned dataset for a session."""
-    entry = _cleaned_cache.get(req.session_id)
+async def ai_nlq(cache_id: str = Query(...), body: _AIBody | None = None):
+    """Answer a natural-language question against the cleaned dataset."""
+    entry = _cache_get(cache_id)
     if entry is None:
-        raise HTTPException(
-            404, "Session not found in cache — please re-run cleaning first."
-        )
-
+        raise HTTPException(404, "cache_id not found — re-upload or re-run cleaning.")
     df = entry["df"]
+    question = (body.question if body else "") or ""
     try:
-        result = answer_query(req.query, df)
+        result = answer_query(question, df)
     except Exception as e:
         raise HTTPException(500, f"NLQ failed: {e}")
-
-    return result
+    return {
+        "answer": _localize(result.get("answer")),
+        "data": result.get("result"),
+        "chart_b64": result.get("chart_b64"),
+    }
 
 
 # ── Multi-Dataset Comparison ─────────────────────────────────────────────────
@@ -2701,7 +2885,13 @@ def dashboard_summary(db=Depends(get_db)):
     """Aggregate stats across all persisted datasets for the dashboard landing."""
     from .db.models import Dataset
 
-    datasets = db.query(Dataset).all()
+    # Exclude the placeholder dataset created by /ai/narrative — it has a
+    # nil-UUID id and would otherwise surface as latest_session, causing the
+    # frontend to request /kpi/dashboard?cache_id=0000... → 404.
+    PLACEHOLDER_DATASET_ID = "00000000-0000-0000-0000-000000000000"
+    datasets = [
+        d for d in db.query(Dataset).all() if d.id != PLACEHOLDER_DATASET_ID
+    ]
     if not datasets:
         return {
             "total_children": 0,

@@ -82,8 +82,10 @@ export function ChoroplethMap({ districts, selectedDistrict, onDistrictClick }: 
     <div style={{ position: 'relative', width: '100%' }}>
       <ComposableMap
         projection="geoMercator"
-        projectionConfig={{ center: [109.5, 4.0], scale: 1600 }}
-        style={{ width: '100%', height: 'auto' }}
+        projectionConfig={{ center: [109.5, 3.8], scale: 2400 }}
+        width={800}
+        height={360}
+        style={{ width: '100%', height: 'auto', display: 'block' }}
       >
         <Geographies geography="/my-districts.json">
           {({ geographies }: { geographies: { rsmKey: string; properties: Record<string, string> }[] }) =>
@@ -143,10 +145,10 @@ export function ChoroplethMap({ districts, selectedDistrict, onDistrictClick }: 
             {tooltip.district.name}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 2 }}>
-            Stunting: {(tooltip.district.stunting_rate * 100).toFixed(1)}%
+            Stunting: {(Number(tooltip.district.stunting_rate) * 100).toFixed(1)}%
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
-            Wasting: {(tooltip.district.wasting_rate * 100).toFixed(1)}%
+            Wasting: {(Number(tooltip.district.wasting_rate) * 100).toFixed(1)}%
           </div>
           <div style={{ fontSize: 12, fontWeight: 600, color: ragToColor(tooltip.district.risk_rag) }}>
             ● {RAG_LABEL[tooltip.district.risk_rag]}

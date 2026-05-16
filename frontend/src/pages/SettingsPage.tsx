@@ -21,7 +21,21 @@ export function SettingsPage() {
 
   useEffect(() => {
     api.get<Thresholds>('/settings/thresholds').then(r => setThresholds(r.data)).catch(console.error);
-    api.get<{ rules: Rule[] }>('/settings/rules').then(r => setRules(r.data.rules ?? r.data as unknown as Rule[])).catch(console.error);
+    api.get('/settings/rules').then(r => {
+      /* Backend returns a dict keyed by rule-id: { duplicate_check: { enabled }, … }.
+         Normalise to Rule[] so an object can never reach rules.map() (was blanking
+         the page). Also tolerate a future array or { rules: [...] } shape. */
+      const data = r.data?.rules ?? r.data ?? {};
+      const list: Rule[] = Array.isArray(data)
+        ? data
+        : Object.entries(data as Record<string, { enabled?: boolean; description?: string }>)
+            .map(([id, v]) => ({
+              id,
+              description: typeof v?.description === 'string' ? v.description : '',
+              enabled: v?.enabled !== false,
+            }));
+      setRules(list);
+    }).catch(console.error);
   }, []);
 
   const saveThresholds = async () => {
@@ -37,7 +51,7 @@ export function SettingsPage() {
     if (!rule) return;
     const enabled = !rule.enabled;
     setRules(prev => prev.map(r => r.id === id ? { ...r, enabled } : r));
-    await api.post('/settings/rules/toggle', { rule_id: id, enabled }).catch(console.error);
+    await api.post('/settings/rules/toggle', { rule: id, enabled }).catch(console.error);
   };
 
   const sliderStyle: React.CSSProperties = { width: '100%', accentColor: 'var(--kkm-blue)' };

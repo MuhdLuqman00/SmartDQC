@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Download, Search } from 'lucide-react';
+import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
 import { SessionGuard } from '../components/SessionGuard';
@@ -11,9 +12,31 @@ export function ExplorerPage() {
   const { cacheId, filename, rowCount, preview } = useSession();
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
+  const [fetched, setFetched] = useState<Record<string, unknown>[] | null>(null);
+  const [serverRowCount, setServerRowCount] = useState<number | null>(null);
 
-  const rows = (preview as Record<string, unknown>[] | null) ?? [];
+  const ctxRows = (preview as Record<string, unknown>[] | null) ?? [];
+
+  /* In-memory session.preview is only set by the clean wizard's last step.
+     On reopen / refresh / direct nav it's empty — fetch durably by cacheId. */
+  useEffect(() => {
+    if (ctxRows.length > 0 || !cacheId) return;
+    let cancelled = false;
+    api.get(`/clean/preview-cached/${cacheId}`)
+      .then(r => {
+        if (cancelled) return;
+        setFetched(Array.isArray(r.data?.rows) ? r.data.rows : []);
+        setServerRowCount(
+          typeof r.data?.row_count === 'number' ? r.data.row_count : null,
+        );
+      })
+      .catch(() => { if (!cancelled) setFetched([]); });
+    return () => { cancelled = true; };
+  }, [cacheId, ctxRows.length]);
+
+  const rows = ctxRows.length > 0 ? ctxRows : (fetched ?? []);
   const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const effectiveRowCount = rowCount ?? serverRowCount;
 
   const filtered = useMemo(() => {
     if (!query) return rows;
@@ -39,8 +62,8 @@ export function ExplorerPage() {
             {filename}
           </span>
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            {rowCount?.toLocaleString() ?? '—'} {t('rows', 'baris')}
-            {rows.length < (rowCount ?? 0) ? ` · ${t('showing first', 'menunjukkan')} ${rows.length}` : ''}
+            {effectiveRowCount?.toLocaleString() ?? '—'} {t('rows', 'baris')}
+            {rows.length < (effectiveRowCount ?? 0) ? ` · ${t('showing first', 'menunjukkan')} ${rows.length}` : ''}
           </span>
           <div style={{ flex: 1 }} />
           <a

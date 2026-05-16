@@ -77,8 +77,8 @@ export function QualityPage() {
           {stats && (
             <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
               {[
-                { label: t('Rows before', 'Baris sebelum'), value: String((stats.rows_before as number ?? 0).toLocaleString()) },
-                { label: t('Rows after', 'Baris selepas'),  value: String((stats.rows_after as number ?? 0).toLocaleString())  },
+                { label: t('Rows before', 'Baris sebelum'), value: (Number(stats.rows_before) || 0).toLocaleString() },
+                { label: t('Rows after', 'Baris selepas'),  value: (Number(stats.rows_after) || 0).toLocaleString()  },
               ].map(row => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-secondary)' }}>{row.label}</span>
@@ -110,7 +110,7 @@ export function QualityPage() {
                   {sevIcon(issue.severity)}
                   <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{issue.description}</span>
                   <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>
-                    {issue.count.toLocaleString()}
+                    {Number(issue.count).toLocaleString()}
                   </span>
                   {issue.samples?.length ? (expanded === i ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null}
                 </div>

@@ -28,109 +28,206 @@ export function LoginPage() {
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '11px 14px',
-    background: 'rgba(255,255,255,0.08)',
-    border: '1px solid rgba(255,255,255,0.2)',
-    borderRadius: 8, color: '#fff',
+    background: 'var(--surface-2)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-btn)',
+    color: 'var(--text-primary)',
     fontSize: 14, outline: 'none',
     transition: 'border-color var(--transition)',
     fontFamily: 'Inter, sans-serif',
   };
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: '#002D62',
-      backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 40px, rgba(255,255,255,0.015) 40px, rgba(255,255,255,0.015) 80px)',
-    }}>
+    <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--surface)' }}>
+
+      {/* ── LEFT — Brand panel ─────────────────────────────────────────── */}
       <div style={{
-        width: 420, background: 'rgba(255,255,255,0.06)',
-        border: '1px solid rgba(255,255,255,0.12)',
-        borderRadius: 16, padding: '40px 36px',
-        backdropFilter: 'blur(12px)',
-        boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+        flex: '0 0 44%',
+        background: 'var(--kkm-deep)',
+        color: '#fff',
+        padding: '48px 56px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
       }}>
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        {/* Top: ministry mark */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{
-            width: 52, height: 52, borderRadius: 12,
-            background: 'var(--kkm-sky)', color: '#fff',
+            width: 44, height: 44, borderRadius: 6,
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.18)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontFamily: "'Plus Jakarta Sans', sans-serif",
-            fontWeight: 700, fontSize: 22, margin: '0 auto 14px',
+            fontWeight: 700, fontSize: 18, color: '#fff',
           }}>S</div>
-          <div style={{
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            fontWeight: 700, fontSize: 22, color: '#fff',
-          }}>
-            Smart<span style={{ color: 'var(--kkm-sky)' }}>DQC</span>
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 }}>
-            {t('Paediatric Nutrition Data Quality System', 'Sistem Kualiti Data Pemakanan Pediatrik')}
+          <div>
+            <div style={{
+              fontSize: 10, letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: 'rgba(255,255,255,0.55)',
+              marginBottom: 2,
+            }}>
+              {t('Ministry of Health Malaysia', 'Kementerian Kesihatan Malaysia')}
+            </div>
+            <div style={{
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              fontWeight: 700, fontSize: 16, color: '#fff',
+              letterSpacing: '-0.01em',
+            }}>
+              SmartDQC
+            </div>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 6, letterSpacing: '0.05em' }}>
-              {t('USERNAME', 'NAMA PENGGUNA')}
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder={t('Enter username', 'Masukkan nama pengguna')}
-              required
-              style={inputStyle}
-              onFocus={e => (e.target.style.borderColor = 'var(--kkm-sky)')}
-              onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.2)')}
-            />
-          </div>
+        {/* Middle: tagline */}
+        <div>
+          <h1 style={{
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            fontWeight: 700, fontSize: 32, lineHeight: 1.25,
+            margin: 0, marginBottom: 18,
+            letterSpacing: '-0.015em',
+          }}>
+            {t(
+              'Data Quality & Analytics Platform',
+              'Platform Kualiti Data & Analitik',
+            )}
+          </h1>
+          <p style={{
+            fontSize: 14, lineHeight: 1.7,
+            color: 'rgba(255,255,255,0.65)',
+            maxWidth: 420, margin: 0,
+          }}>
+            {t(
+              'Secure data validation, quality assurance, and reporting platform for the Ministry of Health Malaysia.',
+              'Platform pengesahan data, jaminan kualiti, dan pelaporan selamat untuk Kementerian Kesihatan Malaysia.',
+            )}
+          </p>
+        </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 6, letterSpacing: '0.05em' }}>
-              {t('PASSWORD', 'KATA LALUAN')}
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              style={inputStyle}
-              onFocus={e => (e.target.style.borderColor = 'var(--kkm-sky)')}
-              onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.2)')}
-            />
-          </div>
+        {/* Bottom: footer */}
+        <div style={{
+          fontSize: 11, color: 'rgba(255,255,255,0.4)',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          paddingTop: 18,
+          display: 'flex', justifyContent: 'space-between',
+        }}>
+          <span>© {new Date().getFullYear()} Kementerian Kesihatan Malaysia</span>
+          <span>v2.0</span>
+        </div>
+      </div>
 
-          {error && (
-            <div style={{
-              background: 'rgba(192,57,43,0.2)', border: '1px solid rgba(192,57,43,0.4)',
-              borderRadius: 8, padding: '10px 14px',
-              color: '#ff8b7e', fontSize: 13,
-            }}>
-              {error}
+      {/* ── RIGHT — Form panel ─────────────────────────────────────────── */}
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '40px',
+      }}>
+        <div style={{ width: '100%', maxWidth: 380 }}>
+          <h2 style={{
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            fontWeight: 700, fontSize: 24,
+            color: 'var(--text-primary)',
+            margin: 0, marginBottom: 8,
+            letterSpacing: '-0.01em',
+          }}>
+            {t('Sign In', 'Log Masuk')}
+          </h2>
+          <p style={{
+            fontSize: 13, color: 'var(--text-secondary)',
+            margin: 0, marginBottom: 28,
+          }}>
+            {t(
+              'Enter your credentials to access the system.',
+              'Masukkan maklumat akaun anda untuk akses sistem.',
+            )}
+          </p>
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label style={{
+                display: 'block', fontSize: 12, fontWeight: 600,
+                color: 'var(--text-secondary)', marginBottom: 6,
+              }}>
+                {t('Username', 'Nama Pengguna')}
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder={t('Enter username', 'Masukkan nama pengguna')}
+                required
+                autoComplete="username"
+                style={inputStyle}
+                onFocus={e => (e.target.style.borderColor = 'var(--kkm-blue)')}
+                onBlur={e => (e.target.style.borderColor = 'var(--border)')}
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              marginTop: 6,
-              background: loading ? 'rgba(0,114,188,0.6)' : 'var(--kkm-blue)',
-              color: '#fff', border: 'none',
-              borderRadius: 8, padding: '12px',
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              fontWeight: 700, fontSize: 15,
-              transition: 'opacity var(--transition)',
-              cursor: loading ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {loading
-              ? t('Logging in…', 'Sedang log masuk…')
-              : t('Log In', 'Log Masuk')}
-          </button>
-        </form>
+            <div>
+              <label style={{
+                display: 'block', fontSize: 12, fontWeight: 600,
+                color: 'var(--text-secondary)', marginBottom: 6,
+              }}>
+                {t('Password', 'Kata Laluan')}
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+                style={inputStyle}
+                onFocus={e => (e.target.style.borderColor = 'var(--kkm-blue)')}
+                onBlur={e => (e.target.style.borderColor = 'var(--border)')}
+              />
+            </div>
+
+            {error && (
+              <div style={{
+                background: 'var(--danger-bg)',
+                border: '1px solid var(--danger)',
+                borderRadius: 'var(--radius-btn)',
+                padding: '10px 14px',
+                color: 'var(--danger)', fontSize: 13,
+              }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                marginTop: 6,
+                background: loading ? 'rgba(0,114,188,0.7)' : 'var(--kkm-blue)',
+                color: '#fff', border: 'none',
+                borderRadius: 'var(--radius-btn)',
+                padding: '12px 16px',
+                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                fontWeight: 600, fontSize: 14,
+                letterSpacing: '0.01em',
+                transition: 'background var(--transition)',
+                cursor: loading ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {loading
+                ? t('Signing in…', 'Sedang log masuk…')
+                : t('Sign In', 'Log Masuk')}
+            </button>
+          </form>
+
+          <div style={{
+            marginTop: 28, paddingTop: 18,
+            borderTop: '1px solid var(--border)',
+            fontSize: 11, color: 'var(--text-muted)',
+            textAlign: 'center', letterSpacing: '0.02em',
+          }}>
+            {t('Authorised users only.', 'Pengguna yang sah sahaja.')}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -19,6 +19,23 @@ interface CleanStats {
   top_issues: Issue[];
 }
 
+/* ── Mapping normaliser ──────────────────────────────────────────────────
+   The backend is inconsistent: /upload/preview returns auto_mapping as
+   { col: { standard, confidence } } while /upload/merge-preview returns it
+   as a flat { col: "field" }. This collapses either shape to safe strings so
+   an object can never reach the render tree (was causing React #31). */
+
+function parseMapEntry(v: unknown): { standard: string; confidence: number } {
+  if (v && typeof v === 'object') {
+    const o = v as { standard?: unknown; confidence?: unknown };
+    return {
+      standard: typeof o.standard === 'string' ? o.standard : '',
+      confidence: Number(o.confidence) || 0,
+    };
+  }
+  return { standard: typeof v === 'string' ? v : '', confidence: v ? 0.9 : 0 };
+}
+
 /* ── Step indicator ──────────────────────────────────────────────────── */
 
 function StepIndicator({ current }: { current: Step }) {
@@ -113,30 +130,33 @@ export function UploadPage() {
     setLoading(true); setError('');
     try {
       const fd = new FormData();
-      if (multiMode && files.length > 1) {
-        files.forEach(f => fd.append('files', f));
-        const r = await api.post('/upload/merge-preview', fd);
-        setCacheId(r.data.cache_id);
-        setDetectedType(r.data.source_type || 'unknown');
-        setRowCount(r.data.row_count || 0);
-        const cols: string[] = Object.keys(r.data.auto_mapping || {});
-        setMapping(cols.map((c: string) => ({
-          raw_column: c, standard_field: r.data.auto_mapping[c] || '', confidence: r.data.confidence?.[c] || 0,
-        })));
-        setAvailableFields(r.data.available_fields || []);
-      } else {
-        fd.append('file', files[0]);
-        const r = await api.post('/upload/preview', fd);
-        setCacheId(r.data.cache_id);
-        setDetectedType(r.data.detected_source_type || r.data.source_type || 'unknown');
-        setRowCount(r.data.row_count || 0);
-        setWideFormat(r.data.is_wide_format || false);
-        const am = r.data.auto_mapping || {};
-        setMapping(Object.keys(am).map((c: string) => ({
-          raw_column: c, standard_field: am[c] || '', confidence: r.data.confidence?.[c] ?? 0.9,
-        })));
-        setAvailableFields(r.data.available_fields || Object.values(am));
-      }
+      const am = (multiMode && files.length > 1)
+        ? await (async () => {
+            files.forEach(f => fd.append('files', f));
+            const r = await api.post('/upload/merge-preview', fd);
+            setCacheId(r.data.cache_id);
+            setDetectedType(r.data.source_type || 'unknown');
+            setRowCount(Number(r.data.total_rows ?? r.data.row_count) || 0);
+            return r.data.auto_mapping || {};
+          })()
+        : await (async () => {
+            fd.append('file', files[0]);
+            const r = await api.post('/upload/preview', fd);
+            setCacheId(r.data.cache_id);
+            setDetectedType(r.data.detected_source_type || r.data.source_type || 'unknown');
+            setRowCount(Number(r.data.rows ?? r.data.row_count) || 0);
+            setWideFormat(r.data.is_wide_format || false);
+            return r.data.auto_mapping || {};
+          })();
+
+      const rows: MappingRow[] = Object.keys(am).map((c) => {
+        const { standard, confidence } = parseMapEntry(am[c]);
+        return { raw_column: c, standard_field: standard, confidence };
+      });
+      setMapping(rows);
+      setAvailableFields(
+        Array.from(new Set(rows.map(r => r.standard_field).filter(Boolean))).sort(),
+      );
       setStep(2);
     } catch (e: unknown) {
       setError(t('Upload failed. Check file format.', 'Muat naik gagal. Semak format fail.'));
@@ -164,7 +184,7 @@ export function UploadPage() {
       await api.post(`/mapping/validate?cache_id=${cacheId}`, { mapping: mappingDict });
       /* proceed to quality check */
       const qr = await api.post(`/clean/quality-check?cache_id=${cacheId}`, { mapping: mappingDict });
-      setQualityCheck({ score: qr.data.quality_score || qr.data.completeness_pct || 0, issues: qr.data.issues || [] });
+      setQualityCheck({ score: Number(qr.data.quality_score ?? qr.data.completeness_pct) || 0, issues: qr.data.issues || [] });
       setStep(3);
     } catch { setError(t('Validation failed.', 'Pengesahan gagal.')); }
     finally { setLoading(false); }
@@ -179,11 +199,11 @@ export function UploadPage() {
       mapping.forEach(m => { if (m.standard_field) mappingDict[m.raw_column] = m.standard_field; });
       const r = await api.post(`/clean/run?cache_id=${cacheId}`, { mapping: mappingDict });
       setCleanStats({
-        rows_before: r.data.rows_before || rowCount,
-        rows_after: r.data.rows_after || 0,
-        quality_score: r.data.quality_score || 0,
-        rules_applied: r.data.rules_applied || [],
-        top_issues: r.data.top_issues || [],
+        rows_before: Number(r.data.rows_before) || rowCount,
+        rows_after: Number(r.data.rows_after) || 0,
+        quality_score: Number(r.data.quality_score) || 0,
+        rules_applied: Array.isArray(r.data.rules_applied) ? r.data.rules_applied : [],
+        top_issues: Array.isArray(r.data.top_issues) ? r.data.top_issues : [],
       });
       setSession({
         cacheId,
@@ -371,7 +391,7 @@ export function UploadPage() {
                           width: 6, height: 6, borderRadius: '50%',
                           background: confidenceColor(row.confidence),
                         }} />
-                        {(row.confidence * 100).toFixed(0)}%
+                        {(Number(row.confidence) * 100).toFixed(0)}%
                       </div>
                     </td>
                   </tr>
@@ -399,6 +419,12 @@ export function UploadPage() {
       )}
 
       {/* ── STEP 3 ── */}
+      {step === 3 && !qualityCheck && (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+          <RefreshCw size={24} className="spin" style={{ marginBottom: 12 }} />
+          <div>{t('Loading quality check…', 'Memuatkan semakan kualiti…')}</div>
+        </div>
+      )}
       {step === 3 && qualityCheck && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '32px', boxShadow: 'var(--shadow-card)' }}>
           <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 18, fontWeight: 700, marginBottom: 20 }}>
@@ -413,7 +439,7 @@ export function UploadPage() {
             borderRadius: 10, padding: '16px 20px', marginBottom: 20,
           }}>
             <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'Inter, sans-serif' }}>
-              {qualityCheck.score.toFixed(1)}%
+              {Number(qualityCheck.score).toFixed(1)}%
             </div>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>
@@ -436,7 +462,7 @@ export function UploadPage() {
             }}>
               <AlertCircle size={15} style={{ color: issue.severity === 'critical' ? 'var(--danger)' : 'var(--warning)', flexShrink: 0 }} />
               <span style={{ flex: 1, fontSize: 13 }}>{issue.description}</span>
-              <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{issue.count.toLocaleString()}</span>
+              <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{Number(issue.count).toLocaleString()}</span>
             </div>
           ))}
 
@@ -459,6 +485,12 @@ export function UploadPage() {
       )}
 
       {/* ── STEP 4 ── */}
+      {step === 4 && !cleanStats && (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+          <RefreshCw size={24} className="spin" style={{ marginBottom: 12 }} />
+          <div>{t('Finalising…', 'Memuatkan…')}</div>
+        </div>
+      )}
       {step === 4 && cleanStats && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '32px', boxShadow: 'var(--shadow-card)' }}>
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
@@ -470,9 +502,9 @@ export function UploadPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
             {[
-              { label: t('Before', 'Sebelum'), value: cleanStats.rows_before.toLocaleString() },
-              { label: t('After', 'Selepas'),  value: cleanStats.rows_after.toLocaleString()  },
-              { label: t('Quality Score', 'Skor Kualiti'), value: `${cleanStats.quality_score.toFixed(1)}%` },
+              { label: t('Before', 'Sebelum'), value: Number(cleanStats.rows_before).toLocaleString() },
+              { label: t('After', 'Selepas'),  value: Number(cleanStats.rows_after).toLocaleString()  },
+              { label: t('Quality Score', 'Skor Kualiti'), value: `${Number(cleanStats.quality_score).toFixed(1)}%` },
             ].map(card => (
               <div key={card.label} style={{ background: 'var(--surface-2)', borderRadius: 8, padding: '14px 16px', textAlign: 'center', border: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>{card.label}</div>
