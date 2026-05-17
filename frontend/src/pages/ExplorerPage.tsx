@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
 import { SessionGuard } from '../components/SessionGuard';
+import { ColumnHistogram } from '../components/ColumnHistogram';
 
 const PAGE_SIZE = 50;
 
@@ -37,6 +38,21 @@ export function ExplorerPage() {
   const rows = ctxRows.length > 0 ? ctxRows : (fetched ?? []);
   const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   const effectiveRowCount = rowCount ?? serverRowCount;
+
+  const numericColumns = useMemo(
+    () => columns.filter(c =>
+      rows.some(r => r[c] != null && r[c] !== '' && Number.isFinite(Number(r[c])))
+    ),
+    [columns, rows],
+  );
+  const [histCol, setHistCol] = useState<string>('');
+  const activeHistCol = histCol || numericColumns[0] || '';
+  const histValues = useMemo(
+    () => rows
+      .map(r => Number(r[activeHistCol]))
+      .filter(v => Number.isFinite(v)),
+    [rows, activeHistCol],
+  );
 
   const filtered = useMemo(() => {
     if (!query) return rows;
@@ -131,6 +147,25 @@ export function ExplorerPage() {
             </table>
           )}
         </div>
+
+        {/* Column distribution */}
+        {numericColumns.length > 0 && (
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                {t('Column Distribution', 'Taburan Lajur')}
+              </span>
+              <select
+                value={activeHistCol}
+                onChange={e => setHistCol(e.target.value)}
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)' }}
+              >
+                {numericColumns.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <ColumnHistogram values={histValues} />
+          </div>
+        )}
 
         {/* Pagination */}
         {totalPages > 1 && (

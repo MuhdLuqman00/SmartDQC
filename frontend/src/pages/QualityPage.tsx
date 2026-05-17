@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AlertCircle, AlertTriangle, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
 import { SessionGuard } from '../components/SessionGuard';
 import { RagBadge, scoreToRag } from '../components/RagBadge';
+import { ColumnHistogram } from '../components/ColumnHistogram';
 
 interface Issue { description: string; severity: 'critical' | 'warning' | 'info'; count: number; samples?: string[]; }
 interface AnomalyRow { row_index: number; columns: string[]; suggestion: string; }
@@ -41,6 +42,31 @@ export function QualityPage() {
   const stats = cleanStats as Record<string, unknown> | null;
   const issues: Issue[] = (stats?.top_issues as Issue[]) ?? [];
   const rulesApplied: string[] = (stats?.rules_applied as string[]) ?? [];
+
+  const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
+
+  useEffect(() => {
+    if (!cacheId) return;
+    let cancelled = false;
+    api.get(`/clean/preview-cached/${cacheId}`)
+      .then(r => { if (!cancelled) setPreviewRows(Array.isArray(r.data?.rows) ? r.data.rows : []); })
+      .catch(() => { if (!cancelled) setPreviewRows([]); });
+    return () => { cancelled = true; };
+  }, [cacheId]);
+
+  const previewCols = previewRows.length > 0 ? Object.keys(previewRows[0]) : [];
+  const numericCols = useMemo(
+    () => previewCols.filter(c =>
+      previewRows.some(rw => rw[c] != null && rw[c] !== '' && Number.isFinite(Number(rw[c])))
+    ),
+    [previewCols, previewRows],
+  );
+  const [distCol, setDistCol] = useState<string>('');
+  const activeDistCol = distCol || numericCols[0] || '';
+  const distValues = useMemo(
+    () => previewRows.map(rw => Number(rw[activeDistCol])).filter(v => Number.isFinite(v)),
+    [previewRows, activeDistCol],
+  );
 
   const runAnomalyDetection = async () => {
     if (!cacheId) return;
@@ -184,6 +210,32 @@ export function QualityPage() {
                   </tbody>
                 </table>
               )
+            )}
+          </div>
+
+          {/* Numeric distribution */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {t('Numeric Distribution', 'Taburan Berangka')}
+              </span>
+              {numericCols.length > 0 && (
+                <select
+                  value={activeDistCol}
+                  onChange={e => setDistCol(e.target.value)}
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)' }}
+                >
+                  {numericCols.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              )}
+            </div>
+            {numericCols.length > 0 ? (
+              <ColumnHistogram values={distValues} />
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                {t('No numeric columns available for this dataset.',
+                   'Tiada lajur berangka tersedia untuk dataset ini.')}
+              </div>
             )}
           </div>
         </div>
