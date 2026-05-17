@@ -15,6 +15,10 @@ export function ExplorerPage() {
   const [page, setPage] = useState(0);
   const [fetched, setFetched] = useState<Record<string, unknown>[] | null>(null);
   const [serverRowCount, setServerRowCount] = useState<number | null>(null);
+  const [editing, setEditing] = useState<{ rowIdx: number; col: string } | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [localRows, setLocalRows] = useState<Record<string, unknown>[] | null>(null);
 
   const ctxRows = (preview as Record<string, unknown>[] | null) ?? [];
 
@@ -35,7 +39,8 @@ export function ExplorerPage() {
     return () => { cancelled = true; };
   }, [cacheId, ctxRows.length]);
 
-  const rows = ctxRows.length > 0 ? ctxRows : (fetched ?? []);
+  const baseRows = ctxRows.length > 0 ? ctxRows : (fetched ?? []);
+  const rows = localRows ?? baseRows;
   const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   const effectiveRowCount = rowCount ?? serverRowCount;
 
@@ -53,6 +58,27 @@ export function ExplorerPage() {
       .filter(v => Number.isFinite(v)),
     [rows, activeHistCol],
   );
+
+  const editable = query === '';  // positional identity is only safe unfiltered
+
+  const commitEdit = async () => {
+    if (!editing || !cacheId) { setEditing(null); return; }
+    setSaving(true);
+    try {
+      const r = await api.patch<{ row_index: number; row: Record<string, unknown> }>(
+        '/clean/cell',
+        { cache_id: cacheId, row_index: editing.rowIdx, column: editing.col, value: editValue },
+      );
+      const next = [...rows];
+      next[r.data.row_index] = r.data.row;
+      setLocalRows(next);
+      setEditing(null);
+    } catch {
+      setEditing(null);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!query) return rows;
@@ -96,6 +122,14 @@ export function ExplorerPage() {
           </a>
         </div>
 
+        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {editable
+            ? t('Double-click a cell to edit. Enter saves, Esc cancels.',
+                'Klik dua kali sel untuk menyunting. Enter simpan, Esc batal.')
+            : t('Clear the search to enable editing.',
+                'Kosongkan carian untuk membolehkan suntingan.')}
+        </div>
+
         {/* Search */}
         <div style={{ position: 'relative', maxWidth: 320 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -136,11 +170,40 @@ export function ExplorerPage() {
               <tbody>
                 {pageRows.map((row, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'var(--surface-2)' }}>
-                    {columns.map(c => (
-                      <td key={c} style={{ padding: '9px 14px', color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>
-                        {row[c] == null ? <span style={{ color: 'var(--text-muted)' }}>—</span> : String(row[c])}
-                      </td>
-                    ))}
+                    {columns.map(c => {
+                      const absIdx = page * PAGE_SIZE + i;
+                      const isEditing = editing?.rowIdx === absIdx && editing?.col === c;
+                      return (
+                        <td
+                          key={c}
+                          onDoubleClick={() => {
+                            if (!editable) return;
+                            setEditing({ rowIdx: absIdx, col: c });
+                            setEditValue(row[c] == null ? '' : String(row[c]));
+                          }}
+                          style={{ padding: '9px 14px', color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', cursor: editable ? 'cell' : 'default' }}
+                        >
+                          {isEditing ? (
+                            <input
+                              autoFocus
+                              value={editValue}
+                              disabled={saving}
+                              onChange={e => setEditValue(e.target.value)}
+                              onBlur={commitEdit}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') commitEdit();
+                                if (e.key === 'Escape') setEditing(null);
+                              }}
+                              style={{ width: 120, padding: '2px 6px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', border: '1px solid var(--kkm-blue)', borderRadius: 4, background: 'var(--surface)', color: 'var(--text-primary)' }}
+                            />
+                          ) : (
+                            row[c] == null
+                              ? <span style={{ color: 'var(--text-muted)' }}>—</span>
+                              : String(row[c])
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
