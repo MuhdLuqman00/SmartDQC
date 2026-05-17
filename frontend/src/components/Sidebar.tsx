@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Upload, Table2, ShieldCheck,
   Sparkles, BarChart3, BookOpen, Clock, Settings,
-  ClipboardList, ChevronRight, ChevronLeft,
+  ClipboardList, ChevronRight, ChevronLeft, MapPin,
 } from 'lucide-react';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
@@ -27,6 +27,7 @@ const GROUPS: Group[] = [
       { path: '/explorer', en: 'Explorer',       bm: 'Penjelajah',     icon: <Table2 size={17} /> },
       { path: '/quality',  en: 'Quality Report', bm: 'Laporan Kualiti', icon: <ShieldCheck size={17} /> },
       { path: '/ai',       en: 'AI Assistant',   bm: 'Pembantu AI',    icon: <Sparkles size={17} /> },
+      { path: '/geo',      en: 'Geo & Risk',     bm: 'Geo & Risiko',   icon: <MapPin size={17} /> },
     ],
   },
   {

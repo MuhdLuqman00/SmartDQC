@@ -337,7 +337,7 @@ def myvass_wide_to_long(df: pd.DataFrame) -> pd.DataFrame:
 # ─── MAIN EDA FUNCTION ────────────────────────────────────────────────────────
 
 def run_eda(df: pd.DataFrame, mapping: dict, source_type: str,
-            config: dict = None) -> dict:
+            config: dict = None, bmi_threshold: float = 1.0) -> dict:
     """
     Run the complete EDA pipeline on the given DataFrame.
     mapping: {standard_field: raw_column_name}
