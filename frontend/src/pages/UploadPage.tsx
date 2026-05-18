@@ -206,7 +206,7 @@ export function UploadPage() {
         top_issues: Array.isArray(r.data.top_issues) ? r.data.top_issues : [],
       });
       setSession({
-        cacheId,
+        cacheId: r.data.cache_id,
         filename: files[0]?.name || 'dataset',
         sourceType: detectedType,
         rowCount: r.data.rows_after || 0,

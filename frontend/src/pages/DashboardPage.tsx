@@ -44,6 +44,15 @@ interface KpiResult {
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
+const STATE_TO_CODE: Record<string, string> = {
+  JOHOR: 'jhr', KEDAH: 'kdh', KELANTAN: 'ktn',
+  'KUALA LUMPUR': 'kul', LABUAN: 'lbn', MELAKA: 'mlk',
+  'NEGERI SEMBILAN': 'nsn', PAHANG: 'phg', PUTRAJAYA: 'pjy',
+  PERLIS: 'pls', PENANG: 'png', 'PULAU PINANG': 'png',
+  PERAK: 'prk', SABAH: 'sbh', SELANGOR: 'sgr',
+  SARAWAK: 'swk', TERENGGANU: 'trg',
+};
+
 function fmt(n: number | string | null | undefined) { return n == null ? '—' : Number(n).toLocaleString(); }
 
 function GroupBars({ title, rows, labelKey, indicator, notAvail }: {
@@ -78,7 +87,7 @@ function GroupBars({ title, rows, labelKey, indicator, notAvail }: {
         return (
           <div key={i} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 3 }}>
-              <span>{label}</span><span style={{ fontWeight: 600 }}>{v.toFixed(2)}%</span>
+              <span>{label} <span style={{ color: 'var(--text-muted)' }}>(n={r.n ?? 0})</span></span><span style={{ fontWeight: 600 }}>{v.toFixed(2)}%</span>
             </div>
             <div style={{ height: 8, background: 'var(--surface-2)', borderRadius: 4 }}>
               <div style={{ height: '100%', width: `${Math.min(100, v)}%`, background: 'var(--kkm-teal)', borderRadius: 4 }} />
@@ -181,7 +190,7 @@ export function DashboardPage() {
   const selInd = indicators.find(i => i.key === selectedIndicator);
 
   const mapDistricts: District[] = (kpi?.by_state ?? []).map(s => ({
-    name: s.state ?? '',
+    name: STATE_TO_CODE[(s.state ?? '').toUpperCase()] ?? (s.state ?? '').toLowerCase(),
     stunting_rate: Number(s.rates.stunting ?? 0) / 100,
     wasting_rate: Number(s.rates.wasting ?? 0) / 100,
     underweight_rate: Number(s.rates.underweight ?? 0) / 100,

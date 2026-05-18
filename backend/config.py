@@ -231,7 +231,9 @@ AUTO_MAPPING_HINTS = {
 def detect_source_type(columns: list) -> str:
     """Detect data source from column names (case-insensitive)."""
     cols_lower = {c.lower().strip() for c in columns}
-    joined = " ".join(cols_lower)
+    # Normalize underscores → spaces so signals match both "nama taska" and "nama_taska"
+    cols_normalized = {c.replace('_', ' ') for c in cols_lower}
+    joined = " ".join(cols_normalized)
 
     # NCDC/TASKA signals (year-prefixed columns + TASKA name)
     ncdc_signals = ["nama taska", "no. mykid", "pendapatan keluarga", "kumpulan umur",
@@ -244,8 +246,8 @@ def detect_source_type(columns: list) -> str:
                       "nama klinik", "assessment status",
                       "ic_no_passport", "dose_date", "facility_name"]
 
-    ncdc_score = sum(1 for s in ncdc_signals if s in joined or s in cols_lower)
-    klinik_score = sum(1 for s in klinik_signals if s in joined or s in cols_lower)
+    ncdc_score = sum(1 for s in ncdc_signals if s in joined or s in cols_normalized)
+    klinik_score = sum(1 for s in klinik_signals if s in joined or s in cols_normalized)
 
     # If NCDC signals dominate, classify as myvass (TASKA/NCDC format)
     # Otherwise check klinik
@@ -262,15 +264,44 @@ def auto_suggest_mapping(columns: list, source_type: str) -> dict:
     mapping = {k: None for k in STANDARD_SCHEMA.keys()}
     hints = AUTO_MAPPING_HINTS.get(source_type, {})
 
-    for field, possible in hints.items():
-        for p in possible:
-            if p.lower() in cols_lower:
-                mapping[field] = cols_lower[p.lower()]
-                break
+    # For unknown/klinik (or any source with no hint set) reuse the column-
+    # name knowledge from ALL supported schemas, so a near-known/unsupported
+    # dataset gets deterministic hints instead of depending 100% on the LLM.
+    generic = (not hints) or source_type in ("unknown", "klinik")
+    if generic:
+        merged: dict = {}
+        for hintset in AUTO_MAPPING_HINTS.values():
+            for field, pats in hintset.items():
+                lst = merged.setdefault(field, [])
+                for p in pats:
+                    if p not in lst:
+                        lst.append(p)
+        hints = merged
+
+    used: set = set()
+    # Generic path iterates canonical order (id first) and refuses to assign
+    # one raw column to two fields — a real union-hint collision risk; the
+    # ambiguous column is left unmapped so AI/the wizard resolves it rather
+    # than a silent wrong pick. Known schemas keep their original behaviour.
+    field_order = list(STANDARD_SCHEMA.keys()) if generic else list(hints.keys())
+    for field in field_order:
+        for p in hints.get(field, []):
+            raw = cols_lower.get(p.lower())
+            if raw is None:
+                continue
+            if generic and raw in used:
+                continue
+            mapping[field] = raw
+            used.add(raw)
+            break
 
     # Fuzzy fallback: if standard field name itself is in columns, use it
     for field in STANDARD_SCHEMA:
         if mapping.get(field) is None and field in cols_lower:
-            mapping[field] = cols_lower[field]
+            raw = cols_lower[field]
+            if generic and raw in used:
+                continue
+            mapping[field] = raw
+            used.add(raw)
 
     return mapping

@@ -2,7 +2,7 @@ import os
 import httpx
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e4b")
 
 
 class OllamaError(Exception):
@@ -24,10 +24,10 @@ def generate(prompt: str, system: str | None = None, json_mode: bool = False) ->
         resp = httpx.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json=payload,
-            timeout=120.0,
+            timeout=300.0,
         )
     except httpx.TimeoutException:
-        raise OllamaError("Model timed out after 120s")
+        raise OllamaError("Model timed out after 300s")
     except httpx.RequestError as e:
         raise OllamaError(f"Cannot reach Ollama: {e}")
 

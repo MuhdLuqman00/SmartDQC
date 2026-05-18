@@ -90,9 +90,11 @@ export function ChoroplethMap({ districts, selectedDistrict, onDistrictClick }: 
         <Geographies geography="/my-districts.json">
           {({ geographies }: { geographies: { rsmKey: string; properties: Record<string, string> }[] }) =>
             geographies.map(geo => {
-              const geoName = String(geo.properties['name'] ?? '').trim().toLowerCase();
-              const district = lookup.get(geoName);
-              const isSelected = selectedDistrict && geoName === selectedDistrict.toLowerCase();
+              // Match by 3-letter state code (geo.properties.state) so all districts
+              // in a state share the same KPI colour.
+              const geoCode = String(geo.properties['state'] ?? '').trim().toLowerCase();
+              const district = lookup.get(geoCode);
+              const isSelected = selectedDistrict && geoCode === selectedDistrict.toLowerCase();
               const fill = district ? ragToColor(district.risk_rag) : 'var(--surface-2)';
 
               return (
@@ -100,8 +102,8 @@ export function ChoroplethMap({ districts, selectedDistrict, onDistrictClick }: 
                   key={geo.rsmKey}
                   geography={geo}
                   fill={fill}
-                  stroke={isSelected ? '#fff' : 'var(--surface)'}
-                  strokeWidth={isSelected ? 1.5 : 0.5}
+                  stroke={isSelected ? 'var(--kkm-sky)' : 'var(--border)'}
+                  strokeWidth={isSelected ? 2 : 1}
                   style={{
                     default: {
                       outline: 'none',
@@ -113,8 +115,7 @@ export function ChoroplethMap({ districts, selectedDistrict, onDistrictClick }: 
                   }}
                   onClick={() => {
                     if (!onDistrictClick) return;
-                    const name = district?.name || geo.properties['name'] || '';
-                    onDistrictClick(isSelected ? null : name);
+                    onDistrictClick(isSelected ? null : geoCode);
                   }}
                   onMouseEnter={(evt: React.MouseEvent) => {
                     if (!district) return;

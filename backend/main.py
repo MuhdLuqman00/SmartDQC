@@ -1115,6 +1115,46 @@ def _cache_get(key: str) -> dict | None:
     return None
 
 
+def _cache_set_narrative(key: str, narrative: dict) -> None:
+    """Persist the AI narrative alongside the cleaned-data cache entry.
+
+    Keyed by cache_id and colocated with {df,stats} so the existing
+    dataset-delete eviction already covers it. Regeneration overwrites
+    (latest wins). Re-pickles to disk so the report endpoints — which may
+    rehydrate from disk in a fresh process — see it too.
+    """
+    entry = _cache_get(key)
+    if entry is None:
+        return
+    entry["narrative"] = narrative
+    _cleaned_cache[key] = entry
+    try:
+        with _cache_path(key).open("wb") as fh:
+            _pickle.dump(entry, fh, protocol=_pickle.HIGHEST_PROTOCOL)
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("Narrative persist failed for %s: %s", key, exc)
+
+
+def _get_or_build_narrative(key: str, entry: dict) -> dict:
+    """Return the cached narrative for this cache_id, or generate + persist
+    it once on miss so a report download never silently omits insights.
+    If generation fails (e.g. Ollama down) the report still builds — the
+    narrative sections are simply omitted rather than 500-ing the download.
+    """
+    cached = entry.get("narrative")
+    if cached:
+        return cached
+    try:
+        source_type = (entry.get("stats") or {}).get("source_type") or "myvass"
+        eda_result = run_eda(entry["df"], {}, source_type)
+        narrative = generate_narrative(eda_result)
+        _cache_set_narrative(key, narrative)
+        return narrative
+    except Exception as exc:
+        logger.warning("Report narrative generation failed for %s: %s", key, exc)
+        return {}
+
+
 def _cache_evict(key: str) -> bool:
     """Remove a cache entry from the in-memory hot tier and the disk tier.
     Returns True if anything was removed."""
@@ -1440,14 +1480,31 @@ async def clean_run_endpoint(
     `body` (the proposed mapping) is accepted for contract parity.
     """
     df = _resolve_cached_df(cache_id)
-    filename = (
-        (_cache_get(cache_id) or {})
-        .get("stats", {})
-        .get("filename", "cached_data")
+    _entry_stats = (_cache_get(cache_id) or {}).get("stats", {}) or {}
+    filename = _entry_stats.get("filename", "cached_data")
+
+    # Apply the user-confirmed mapping the wizard already POSTs (was
+    # silently ignored): rename raw columns → canonical names BEFORE
+    # cleaning, mirroring runner.py's inverse-rename for the EDA path.
+    if body and getattr(body, "mapping", None):
+        rename = {
+            raw: std
+            for raw, std in body.mapping.items()
+            if std and raw in df.columns and raw != std
+        }
+        if rename:
+            df = df.rename(columns=rename)
+
+    # Drive the cleaner from the detected source_type (cached at upload),
+    # not the hardcoded "myvass" default. An explicit non-default data_type
+    # from the caller still overrides. unknown/klinik → generic cleaner.
+    cached_st = _entry_stats.get("source_type")
+    effective_type = (
+        cached_st if (data_type == "myvass" and cached_st) else data_type
     )
 
     try:
-        cleaned_df, stats = clean_data(df, data_type)
+        cleaned_df, stats = clean_data(df, effective_type)
     except Exception as e:
         raise HTTPException(500, f"Cleaning error: {str(e)}")
 
@@ -1463,7 +1520,7 @@ async def clean_run_endpoint(
         {
             **(stats or {}),
             "filename": filename,
-            "source_type": data_type,
+            "source_type": effective_type,
             "quality_score": summary["quality_score"],
         },
     )
@@ -1472,7 +1529,7 @@ async def clean_run_endpoint(
         _persist_session(
             cache_id=new_cache_id,
             filename=filename,
-            source_type=data_type,
+            source_type=effective_type,
             row_count=len(cleaned_df),
             result={
                 **(stats or {}),
@@ -1489,7 +1546,7 @@ async def clean_run_endpoint(
         content=json_safe(
             {
                 "success": True,
-                "data_type": data_type,
+                "data_type": effective_type,
                 "stats": stats,
                 "cleaned_columns": cleaned_df.columns.tolist(),
                 "cleaned_column_profile": _profile_columns(cleaned_df),
@@ -1974,7 +2031,8 @@ async def report_pptx_endpoint(
         raise HTTPException(404, "cache_id not found — run /clean/run first")
     eda_result = entry["stats"]
     kpi_result = compute_kpi_dashboard(entry["df"]) if include_kpi else None
-    data = build_pptx_bytes(eda_result, {}, kpi_result=kpi_result)
+    narrative = _get_or_build_narrative(cache_id, entry)
+    data = build_pptx_bytes(eda_result, narrative, kpi_result=kpi_result)
     _log_audit(action="report.pptx", detail=f"cache_id={cache_id}")
     return Response(
         content=data,
@@ -1994,7 +2052,8 @@ async def report_pdf_endpoint(
         raise HTTPException(404, "cache_id not found — run /clean/run first")
     eda_result = entry["stats"]
     kpi_result = compute_kpi_dashboard(entry["df"]) if include_kpi else None
-    data = build_pdf_bytes(eda_result, {}, kpi_result=kpi_result)
+    narrative = _get_or_build_narrative(cache_id, entry)
+    data = build_pdf_bytes(eda_result, narrative, kpi_result=kpi_result)
     _log_audit(action="report.pdf", detail=f"cache_id={cache_id}")
     return Response(
         content=data,
@@ -2805,6 +2864,9 @@ async def ai_narrative(cache_id: str = Query(...)):
         narrative = generate_narrative(eda_result)
     except Exception as e:
         raise HTTPException(500, f"Narrative generation failed: {e}")
+    # Persist by cache_id (overwrite — regeneration is latest-wins) so the
+    # report endpoints embed the same insights the AI page shows.
+    _cache_set_narrative(cache_id, narrative)
     return {"narrative": _format_narrative(narrative), "raw": narrative}
 
 
@@ -2847,6 +2909,7 @@ async def list_datasets():
                 "filename": ds.filename,
                 "source_type": ds.source_type,
                 "row_count": ds.row_count,
+                "quality_score": ds.quality_score,
                 "created_at": ds.created_at.isoformat(),
             }
             for ds in datasets
@@ -2971,6 +3034,7 @@ class EntityLinkRequest(BaseModel):
 async def entity_link(req: EntityLinkRequest):
     """Link child records across 2+ datasets by IC. Writes to entity_linkage table."""
     from backend.db.models import Dataset, AnalysisResult
+    from backend.db.models import Session as DbSession
     from backend.db.init_db import SessionLocal
 
     if len(req.dataset_ids) < 2:
@@ -2984,7 +3048,8 @@ async def entity_link(req: EntityLinkRequest):
                 continue
             ar = (
                 db.query(AnalysisResult)
-                .filter(AnalysisResult.dataset_id == ds_id)
+                .join(AnalysisResult.session)
+                .filter(DbSession.dataset_id == ds_id)
                 .order_by(AnalysisResult.created_at.desc())
                 .first()
             )

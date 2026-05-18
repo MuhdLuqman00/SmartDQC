@@ -23,12 +23,21 @@ export function ReportsPage() {
   const [progress, setProgress] = useState<Record<string, boolean>>({});
 
   const triggerDownload = async (url: string, filename: string) => {
-    const r = await api.get(url, { responseType: 'blob' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(r.data);
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    try {
+      const r = await api.get(url, { responseType: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(r.data);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err: any) {
+      let detail = '';
+      const blob = err?.response?.data;
+      if (blob instanceof Blob) {
+        try { detail = JSON.parse(await blob.text())?.detail ?? ''; } catch { /* non-JSON error body */ }
+      }
+      alert(t(`Report generation failed. ${detail}`, `Penjanaan laporan gagal. ${detail}`));
+    }
   };
 
   const cards: ReportCard[] = [

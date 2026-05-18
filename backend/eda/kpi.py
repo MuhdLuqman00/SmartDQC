@@ -98,6 +98,7 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
         "overall_status": "Green",
         "total_children": 0,
         "indicators": [],
+        "unavailable_indicators": [],
         "by_state": [],
         "by_gender": [],
         "by_age": [],
@@ -107,9 +108,19 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
 
     total = len(df)
     indicators: list[dict] = []
+    unavailable: list[dict] = []
     for flag, kpi_key in _FLAG_TO_KPI.items():
         col = _resolve_flag_col(df, flag)
         if col is None:
+            # Fail loud, not silent: a missing flag column means the inputs
+            # weren't present (e.g. generic-cleaned unknown schema). Surface
+            # it as an explicit gap instead of fabricating / omitting it.
+            unavailable.append({
+                "key":      flag,
+                "label_en": _NATIONAL_KPIS[kpi_key]["label_en"],
+                "label_bm": _NATIONAL_KPIS[kpi_key]["label_bm"],
+                "reason":   "unavailable — required input missing for this dataset",
+            })
             continue
         count = int(df[col].fillna(0).astype(bool).sum())
         actual = round(count / total * 100, 2)
@@ -180,6 +191,7 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
         "overall_status": overall,
         "total_children": total,
         "indicators": indicators,
+        "unavailable_indicators": unavailable,
         "by_state": by_state,
         "by_gender": by_gender,
         "by_age": by_age,

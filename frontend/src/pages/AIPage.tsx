@@ -34,7 +34,10 @@ export function AIPage() {
     setNarrativeLoading(true);
     try {
       const r = await api.post<{ narrative: string; raw?: NarrativeRaw }>(`/ai/narrative?cache_id=${cacheId}`);
-      addMessage({ role: 'narrative', content: r.data.narrative || String(r.data), raw: r.data.raw });
+      const narrativeText = typeof r.data?.narrative === 'string' && r.data.narrative
+        ? r.data.narrative
+        : t('No narrative was produced.', 'Tiada naratif dihasilkan.');
+      addMessage({ role: 'narrative', content: narrativeText, raw: r.data?.raw });
     } catch { addMessage({ role: 'ai', content: t('Failed to generate narrative.', 'Gagal menjana naratif.') }); }
     finally { setNarrativeLoading(false); }
   };
@@ -47,7 +50,10 @@ export function AIPage() {
     setLoading(true);
     try {
       const r = await api.post<{ answer: string; data?: unknown }>(`/ai/nlq?cache_id=${cacheId}`, { question });
-      addMessage({ role: 'ai', content: r.data.answer || String(r.data), data: r.data.data });
+      const answerText = typeof r.data?.answer === 'string' && r.data.answer
+        ? r.data.answer
+        : t('No answer was returned.', 'Tiada jawapan dikembalikan.');
+      addMessage({ role: 'ai', content: answerText, data: r.data?.data });
     } catch { addMessage({ role: 'ai', content: t('No response. Is Ollama running?', 'Tiada respons. Adakah Ollama berjalan?') }); }
     finally { setLoading(false); }
   };

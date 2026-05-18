@@ -146,9 +146,77 @@ export function DatasetLibraryPage() {
             <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
               {t('Comparison Results', 'Hasil Perbandingan')}
             </h3>
-            <pre style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap' }}>
-              {JSON.stringify(comparison, null, 2)}
-            </pre>
+            {(() => {
+              const c = comparison as unknown as {
+                datasets: Array<{ dataset_id: string; name?: string; source_type?: string | null; quality_score?: number | null; indicators?: Record<string, number | null>; created_at?: string }>;
+                deltas: Record<string, number | null>;
+                trend: Record<string, string>;
+              };
+              const METRICS: Array<[string, string]> = [
+                ['quality_score', t('Quality Score', 'Skor Kualiti')],
+                ['stunting_rate', 'Stunting'],
+                ['wasting_rate', 'Wasting'],
+                ['underweight_rate', 'Underweight'],
+                ['overweight_rate', 'Overweight'],
+              ];
+              const cell: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 12, textAlign: 'left' };
+              const num = (m: string, ds: typeof c.datasets[number]) =>
+                m === 'quality_score'
+                  ? (ds.quality_score == null ? '—' : Number(ds.quality_score).toFixed(1))
+                  : (ds.indicators?.[m] == null ? '—' : `${(Number(ds.indicators[m]) * 100).toFixed(1)}%`);
+              const deltaColor = (m: string, v: number | null) => {
+                if (v == null || v === 0) return 'var(--text-muted)';
+                const good = m === 'quality_score' ? v > 0 : v < 0;
+                return good ? 'var(--kkm-teal)' : 'var(--danger)';
+              };
+              const trendColor = (tr?: string) =>
+                tr === 'improving' ? 'var(--kkm-teal)' : tr === 'worsening' ? 'var(--danger)' : 'var(--text-muted)';
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                    <thead><tr>
+                      <th style={{ ...cell, fontWeight: 700 }}>{t('Dataset', 'Dataset')}</th>
+                      {METRICS.map(([k, lbl]) => <th key={k} style={{ ...cell, fontWeight: 700 }}>{lbl}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {c.datasets.map((ds, i) => (
+                        <tr key={ds.dataset_id ?? i}>
+                          <td style={cell}>{ds.name || ds.dataset_id}<div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{(ds.created_at || '').slice(0, 10)}</div></td>
+                          {METRICS.map(([k]) => <td key={k} style={cell}>{num(k, ds)}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                      {t('Change (latest vs earliest)', 'Perubahan (terkini vs terawal)')}
+                    </div>
+                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                      <thead><tr>
+                        <th style={{ ...cell, fontWeight: 700 }}>{t('Metric', 'Metrik')}</th>
+                        <th style={{ ...cell, fontWeight: 700 }}>{t('Delta', 'Delta')}</th>
+                        <th style={{ ...cell, fontWeight: 700 }}>{t('Trend', 'Trend')}</th>
+                      </tr></thead>
+                      <tbody>
+                        {METRICS.map(([k, lbl]) => {
+                          const d = c.deltas?.[k] ?? null;
+                          const unit = k === 'quality_score' ? ' pts' : ' pp';
+                          return (
+                            <tr key={k}>
+                              <td style={cell}>{lbl}</td>
+                              <td style={{ ...cell, color: deltaColor(k, d), fontWeight: 600 }}>
+                                {d == null ? '—' : `${d > 0 ? '+' : ''}${d}${unit}`}
+                              </td>
+                              <td style={{ ...cell, color: trendColor(c.trend?.[k]) }}>{c.trend?.[k] ?? '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
             <button onClick={() => setComparison(null)} style={{ marginTop: 16, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 16px', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}>
               {t('Close', 'Tutup')}
             </button>

@@ -15,7 +15,15 @@ interface KpiIndicator {
   npan_target: number; who_target: number | null; gap: number;
   rag: 'Green' | 'Amber' | 'Red';
 }
-interface KpiGroupRow { group: string; [k: string]: string | number; }
+interface KpiGroupRow {
+  // Backend keys the grouping value by dimension: by_state→state,
+  // by_gender→gender, by_age→group. Plus per-group rates/status/n.
+  state?: string; gender?: string; group?: string;
+  n?: number;
+  rates?: Record<string, number>;
+  status?: Record<string, string>;
+  [k: string]: unknown;
+}
 interface KpiDashboard {
   overall_status: 'Green' | 'Amber' | 'Red';
   total_children: number;
@@ -101,40 +109,73 @@ function KpiCard({ label, value, rag }: { label: string; value: number; rag: 'gr
 
 // ── KPI-to-District mapping ───────────────────────────────────────────────────
 
+const STATE_TO_CODE: Record<string, string> = {
+  JOHOR: 'jhr', KEDAH: 'kdh', KELANTAN: 'ktn',
+  'KUALA LUMPUR': 'kul', LABUAN: 'lbn', MELAKA: 'mlk',
+  'NEGERI SEMBILAN': 'nsn', PAHANG: 'phg', PUTRAJAYA: 'pjy',
+  PERLIS: 'pls', PENANG: 'png', 'PULAU PINANG': 'png',
+  PERAK: 'prk', SABAH: 'sbh', SELANGOR: 'sgr',
+  SARAWAK: 'swk', TERENGGANU: 'trg',
+};
+
 function toDistricts(k: KpiDashboard | null): District[] {
   if (!k) return [];
-  const stunt = k.indicators.find(i => /stunt/i.test(i.key) || /stunt/i.test(i.label_en));
-  const overallRag = ragToLower(k.overall_status);
-  return k.by_state.map(row => ({
-    name: String(row.group),
-    stunting_rate: stunt ? stunt.actual / 100 : 0,
-    wasting_rate: 0,
-    underweight_rate: 0,
-    overweight_rate: 0,
-    risk_rag: overallRag,
-    vs_target: stunt ? stunt.gap : 0,
-  }));
+  // by_state rows are keyed `state` (kpi.py _group_breakdown(..., "state")),
+  // NOT `group`. Mirror DashboardPage: per-state rates + per-state RAG so the
+  // choropleth actually binds and varies (was uncolored/monochrome).
+  return k.by_state.map(row => {
+    const rates = (row.rates as Record<string, number>) ?? {};
+    const status = (row.status as Record<string, string>) ?? {};
+    const stateName = String(row.state ?? '');
+    return {
+      name: STATE_TO_CODE[stateName.toUpperCase()] ?? stateName.toLowerCase(),
+      stunting_rate: Number(rates.stunting ?? 0) / 100,
+      wasting_rate: Number(rates.wasting ?? 0) / 100,
+      underweight_rate: Number(rates.underweight ?? 0) / 100,
+      overweight_rate: Number(rates.overweight ?? 0) / 100,
+      risk_rag: ragToLower(String(status.stunting ?? k.overall_status)),
+      vs_target: 0,
+    };
+  });
 }
 
 // ── Breakdown chart ───────────────────────────────────────────────────────────
 
-function firstNumericKey(rows: KpiGroupRow[]): string | null {
+const RATE_LABELS: Record<string, string> = {
+  stunting: 'Stunting', wasting: 'Wasting',
+  underweight: 'Underweight', overweight: 'Overweight',
+};
+
+function normalizeBreakdown(rows: KpiGroupRow[], groupKey: string): KpiGroupRow[] {
+  return rows.map(row => {
+    const raw = row as Record<string, unknown>;
+    const rates = (raw.rates as Record<string, number>) ?? {};
+    return { group: String(raw[groupKey] ?? ''), ...rates } as KpiGroupRow;
+  });
+}
+
+function firstRateKey(rows: KpiGroupRow[]): string | null {
   if (!rows.length) return null;
   const r = rows[0];
   return Object.keys(r).find(k => k !== 'group' && typeof r[k] === 'number') ?? null;
 }
 
+function rateTooltipFormatter(value: number, name: string) {
+  const label = RATE_LABELS[name] ?? (name.charAt(0).toUpperCase() + name.slice(1));
+  return [`${Number(value).toFixed(1)}%`, label];
+}
+
 function BreakdownChart({ title, rows }: { title: string; rows: KpiGroupRow[] }) {
-  const yKey = firstNumericKey(rows);
+  const yKey = firstRateKey(rows);
   if (!rows.length || !yKey) return null;
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)' }}>
       <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{title}</div>
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={rows}>
-          <XAxis dataKey="group" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-          <Tooltip />
+          <XAxis dataKey="group" tick={{ fontSize: 10 }} interval={0} />
+          <YAxis tick={{ fontSize: 10 }} unit="%" domain={[0, 'auto']} />
+          <Tooltip formatter={rateTooltipFormatter} />
           <Bar dataKey={yKey} fill="var(--kkm-blue)" />
         </BarChart>
       </ResponsiveContainer>
@@ -196,7 +237,11 @@ export function GeoPage() {
             border: '0.5px solid var(--border)', borderRadius: 12,
             overflow: 'hidden', boxSizing: 'border-box',
           }}>
-            <ChoroplethMap districts={districts} />
+            {districts.length === 0
+              ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                  {t('No KPI data — run cleaning first.', 'Tiada data KPI — jalankan pembersihan dahulu.')}
+                </div>
+              : <ChoroplethMap districts={districts} />}
           </div>
           <div style={{ flex: '0 0 60%', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
@@ -223,8 +268,8 @@ export function GeoPage() {
                 actual: i.actual, target: i.npan_target, rag: i.rag,
               }))}>
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip />
+                <YAxis tick={{ fontSize: 10 }} unit="%" />
+                <Tooltip formatter={(v: number, name: string) => [`${Number(v).toFixed(1)}%`, name]} />
                 <Bar dataKey="actual" name={t('Actual', 'Sebenar')}>
                   {kpi.indicators.map((i, idx) => <Cell key={idx} fill={ragFill(i.rag)} />)}
                 </Bar>
@@ -237,9 +282,9 @@ export function GeoPage() {
         {/* Breakdown charts: by state / gender / age */}
         {kpi && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 16 }}>
-            <BreakdownChart title={t('By State', 'Mengikut Negeri')}   rows={kpi.by_state} />
-            <BreakdownChart title={t('By Gender', 'Mengikut Jantina')} rows={kpi.by_gender} />
-            <BreakdownChart title={t('By Age', 'Mengikut Umur')}       rows={kpi.by_age} />
+            <BreakdownChart title={t('By State', 'Mengikut Negeri')}   rows={normalizeBreakdown(kpi.by_state, 'state')} />
+            <BreakdownChart title={t('By Gender', 'Mengikut Jantina')} rows={normalizeBreakdown(kpi.by_gender, 'gender')} />
+            <BreakdownChart title={t('By Age', 'Mengikut Umur')}       rows={normalizeBreakdown(kpi.by_age, 'group')} />
           </div>
         )}
 

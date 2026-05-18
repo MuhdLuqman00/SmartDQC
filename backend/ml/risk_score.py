@@ -15,9 +15,27 @@ _RISK_WEIGHTS: dict[str, int] = {
     "severely_underweight": 40,
 }
 
+# Accept Bahasa Ind_* columns produced by the MyVASS/KPM cleaners
+_FLAG_ALIASES: dict[str, tuple[str, ...]] = {
+    "stunting":             ("stunting", "Ind_Bantut"),
+    "wasting":              ("wasting", "Ind_Susut"),
+    "underweight":          ("underweight", "Ind_Kurang_Berat_Badan"),
+    "overweight":           ("overweight", "Ind_Berlebihan_BB"),
+    "severely_stunted":     ("severely_stunted",),
+    "severely_wasted":      ("severely_wasted",),
+    "severely_underweight": ("severely_underweight",),
+}
+
 _DISTRICT_COLS = ["NEGERI", "STATE", "negeri", "state", "Negeri", "State"]
 _TIER_BINS     = [-1, 20, 50, 100]
 _TIER_LABELS   = ["Low", "Medium", "High"]
+
+
+def _resolve_col(df: pd.DataFrame, flag: str) -> str | None:
+    for candidate in _FLAG_ALIASES.get(flag, (flag,)):
+        if candidate in df.columns:
+            return candidate
+    return None
 
 
 def compute_risk_scores(df: pd.DataFrame) -> dict:
@@ -28,14 +46,13 @@ def compute_risk_scores(df: pd.DataFrame) -> dict:
             "district_summary": None, "high_risk_sample": [],
         }
 
-    available_flags = [f for f in _RISK_WEIGHTS if f in df.columns]
+    flag_cols = {f: _resolve_col(df, f) for f in _RISK_WEIGHTS}
+    flag_cols = {f: col for f, col in flag_cols.items() if col is not None}
+    available_flags = list(flag_cols.keys())
 
-    if available_flags:
-        risk = pd.Series(0.0, index=df.index)
-        for flag in available_flags:
-            risk = risk + df[flag].fillna(0).astype(bool).astype(float) * _RISK_WEIGHTS[flag]
-    else:
-        risk = pd.Series(0.0, index=df.index)
+    risk = pd.Series(0.0, index=df.index)
+    for flag, col in flag_cols.items():
+        risk = risk + df[col].fillna(0).astype(bool).astype(float) * _RISK_WEIGHTS[flag]
     risk = risk.clip(0, 100)
 
     tier = pd.cut(risk, bins=_TIER_BINS, labels=_TIER_LABELS)
@@ -55,8 +72,9 @@ def compute_risk_scores(df: pd.DataFrame) -> dict:
             .to_dict(orient="records")
         )
 
+    actual_flag_cols = list(flag_cols.values())
     key_cols = [c for c in (
-        ["IC_NO_PASSPORT", "NAMA", district_col] + available_flags
+        ["IC_NO_PASSPORT", "NAMA", district_col] + actual_flag_cols
     ) if c and c in df.columns]
     tmp_full = df[key_cols].copy()
     tmp_full["risk_score"] = risk

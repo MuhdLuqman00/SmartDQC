@@ -78,8 +78,20 @@ def _normalize_gender(value: str) -> Optional[str]:
 
 
 def _parse_date(series: pd.Series) -> pd.Series:
-    """Try multiple date formats."""
-    return pd.to_datetime(series, dayfirst=True, errors="coerce")
+    """Parse dates robustly.
+
+    Processed exports store ISO "YYYY-MM-DD[ HH:MM:SS]"; raw sources use
+    day-first "dd/mm/yyyy". A blanket dayfirst=True silently MISPARSES ISO
+    dates (2023-02-08 -> 2023-08-02) and corrupts the computed age. Parse
+    unambiguous/ISO first, then fall back to day-first only for values the
+    first pass could not parse (genuine dd/mm/yyyy)."""
+    s = series.astype(str)
+    is_iso = s.str.match(r"^\s*\d{4}-\d{1,2}-\d{1,2}")
+    # Parse each shape group on its own (homogeneous) values so pandas does
+    # not infer one format across mixed inputs and coerce the rest to NaT.
+    iso = pd.to_datetime(series.where(is_iso), errors="coerce")
+    other = pd.to_datetime(series.where(~is_iso), dayfirst=True, errors="coerce")
+    return iso.where(is_iso, other)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -99,11 +111,16 @@ def clean_myvass(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     # Normalize column names
     df.columns = df.columns.str.strip()
     
-    # Find key columns (case-insensitive)
+    # Find key columns (case- and separator-insensitive: already-processed
+    # exports use underscores e.g. "Tarikh_Lahir" / "Tarikh_Pengukuran",
+    # raw sources use spaces — both must match the same patterns).
     def find_col(patterns):
+        def norm(s: str) -> str:
+            return s.lower().replace("_", " ").replace("-", " ")
         for col in df.columns:
+            nc = norm(col)
             for p in patterns:
-                if p.lower() in col.lower():
+                if norm(p) in nc:
                     return col
         return None
     
@@ -111,7 +128,7 @@ def clean_myvass(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     dob_col = find_col(["tarikh lahir", "dob", "date_of_birth", "birth"])
     weight_col = find_col(["berat", "weight"])
     height_col = find_col(["panjang", "tinggi", "height", "length"])
-    measure_date_col = find_col(["tarikh antropometri", "tarikh ukur", "measurement date", "dose_date"])
+    measure_date_col = find_col(["tarikh antropometri", "tarikh ukur", "tarikh pengukuran", "pengukuran", "measurement date", "dose_date"])
     state_col = find_col(["negeri", "state"])
     
     # Rule 1: Standardize and filter gender
@@ -299,9 +316,15 @@ def clean_ncdc(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     
     # Find key columns
     def find_col(patterns):
+        # Separator-insensitive: processed exports use underscores
+        # ("Tarikh_Lahir"), raw sources use spaces — both must match the
+        # same patterns or near-known schemas lose all rows.
+        def norm(s: str) -> str:
+            return s.lower().replace("_", " ").replace("-", " ")
         for col in df.columns:
+            nc = norm(col)
             for p in patterns:
-                if p.lower() in col.lower():
+                if norm(p) in nc:
                     return col
         return None
     
@@ -556,9 +579,15 @@ def clean_kpm(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     
     # Find key columns
     def find_col(patterns):
+        # Separator-insensitive: processed exports use underscores
+        # ("Tarikh_Lahir"), raw sources use spaces — both must match the
+        # same patterns or near-known schemas lose all rows.
+        def norm(s: str) -> str:
+            return s.lower().replace("_", " ").replace("-", " ")
         for col in df.columns:
+            nc = norm(col)
             for p in patterns:
-                if p.lower() in col.lower():
+                if norm(p) in nc:
                     return col
         return None
     
@@ -690,6 +719,191 @@ def clean_kpm(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# GENERIC CLEANING (unknown / near-known schemas)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def clean_generic(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Conservative cleaner for unknown / "almost-the-same-as-known" schemas.
+
+    Assumes column mapping has already renamed columns toward the canonical
+    schema. Unlike the source-specific cleaners it is *honest, not silent*:
+
+    - It NEVER drops every row when a field is absent. Missing inputs leave
+      the affected indicator UNCOMPUTED (a reported gap) rather than wiping
+      the dataset to 0 rows / 0% (the documented drop-all failure).
+    - Implausible measurements are nulled, not row-dropped.
+    - An indicator column is only created when its required inputs exist for
+      the dataset; otherwise it is listed in stats["indicators_unavailable"]
+      with a reason — never fabricated as a 0% number.
+    - stats carries a coverage report so the gap is visible to the user.
+    """
+    stats: dict = {"raw_count": len(df), "data_type": "generic"}
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+
+    def _norm(s: str) -> str:
+        return s.lower().replace("_", " ").replace("-", " ")
+
+    def find_col(patterns):
+        for col in df.columns:
+            nc = _norm(col)
+            for p in patterns:
+                if _norm(p) in nc:
+                    return col
+        return None
+
+    gender_col = find_col(["jantina", "gender", "sex"])
+    dob_col = find_col(["tarikh lahir", "dob", "date of birth", "birth"])
+    measure_date_col = find_col(
+        ["tarikh ukur", "tarikh antropometri", "tarikh pengukuran",
+         "measurement date", "assessment date", "tarikh assessment"]
+    )
+    weight_col = find_col(["berat kg", "berat", "weight"])
+    height_col = find_col(["tinggi cm", "tinggi", "panjang", "height", "length"])
+    age_col = find_col(["age months", "umur bulan", "age", "umur"])
+
+    has_age = bool(dob_col and measure_date_col) or bool(age_col)
+    coverage = {
+        "jantina": bool(gender_col),
+        "tarikh_lahir": bool(dob_col),
+        "tarikh_ukur": bool(measure_date_col),
+        "berat_kg": bool(weight_col),
+        "tinggi_cm": bool(height_col),
+        "age": has_age,
+    }
+    assumptions: list[str] = []
+
+    # Gender — never drop on missing.
+    if gender_col:
+        df["Gender"] = df[gender_col].astype(str).str.upper().str.strip().map(GENDER_MAP)
+    else:
+        df["Gender"] = None
+
+    df["Tarikh_Lahir"] = _parse_date(df[dob_col]) if dob_col else pd.NaT
+    df["Tarikh_Ukur"] = _parse_date(df[measure_date_col]) if measure_date_col else pd.NaT
+
+    both_dates = df["Tarikh_Lahir"].notna() & df["Tarikh_Ukur"].notna()
+    age_days = pd.Series(np.nan, index=df.index, dtype="float64")
+    if both_dates.any():
+        age_days = age_days.mask(
+            both_dates, (df["Tarikh_Ukur"] - df["Tarikh_Lahir"]).dt.days
+        )
+    elif age_col:
+        vals = pd.to_numeric(df[age_col], errors="coerce")
+        med = vals.dropna().median() if vals.notna().any() else None
+        if med is not None and med <= 18:
+            age_days = vals * 365.25
+            assumptions.append(f"age column '{age_col}' interpreted as YEARS")
+        else:
+            age_days = vals * 30.4375
+            assumptions.append(f"age column '{age_col}' interpreted as MONTHS")
+    df["Age_Days"] = age_days
+    df["Age_Months"] = (df["Age_Days"] / 30.4375).round(2)
+
+    # Only genuine logical garbage is dropped, and only when both dates exist.
+    bad_date = (
+        df["Tarikh_Lahir"].notna()
+        & df["Tarikh_Ukur"].notna()
+        & (df["Tarikh_Ukur"] < df["Tarikh_Lahir"])
+    )
+    stats["dropped_date_before_dob"] = int(bad_date.sum())
+    df = df[~bad_date].copy()
+
+    df["Berat_kg"] = pd.to_numeric(df[weight_col], errors="coerce") if weight_col else np.nan
+    df["Tinggi_cm"] = pd.to_numeric(df[height_col], errors="coerce") if height_col else np.nan
+
+    # Null implausible values — keep the row.
+    if weight_col:
+        df.loc[
+            (df["Berat_kg"] < BERAT_MIN_INFANT) | (df["Berat_kg"] > BERAT_MAX_INFANT),
+            "Berat_kg",
+        ] = np.nan
+    if height_col:
+        df.loc[
+            (df["Tinggi_cm"] < TINGGI_MIN_INFANT) | (df["Tinggi_cm"] > TINGGI_MAX_INFANT),
+            "Tinggi_cm",
+        ] = np.nan
+
+    valid_both = df["Berat_kg"].notna() & df["Tinggi_cm"].notna() & (df["Tinggi_cm"] > 0)
+    df["BMI"] = np.where(
+        valid_both, (df["Berat_kg"] / ((df["Tinggi_cm"] / 100) ** 2)).round(2), np.nan
+    )
+    df.loc[df["BMI"] > BMI_MAX, "BMI"] = np.nan
+
+    # Gate indicator computation on its required inputs (dataset-level).
+    base_ok = ZSCORE_AVAILABLE and coverage["jantina"] and coverage["age"]
+    can_waz = base_ok and coverage["berat_kg"]
+    can_haz = base_ok and coverage["tinggi_cm"]
+    can_baz = base_ok and coverage["berat_kg"] and coverage["tinggi_cm"]
+
+    unavailable: dict[str, str] = {}
+
+    def _gap(name: str):
+        if not ZSCORE_AVAILABLE:
+            unavailable[name] = "WHO z-score tables unavailable"
+        elif not coverage["jantina"]:
+            unavailable[name] = "missing/ambiguous field: jantina (sex)"
+        elif not coverage["age"]:
+            unavailable[name] = "missing/ambiguous field: age (tarikh_lahir/tarikh_ukur)"
+        else:
+            unavailable[name] = "missing/ambiguous measurement input"
+
+    if base_ok:
+        df["WAZ"] = np.nan
+        df["HAZ"] = np.nan
+        df["BAZ"] = np.nan
+        for idx in df.index:
+            ad = df.loc[idx, "Age_Days"]
+            sx = df.loc[idx, "Gender"]
+            if pd.isna(ad) or pd.isna(sx):
+                continue
+            w = df.loc[idx, "Berat_kg"]
+            h = df.loc[idx, "Tinggi_cm"]
+            b = df.loc[idx, "BMI"]
+            if can_waz and pd.notna(w):
+                z = compute_zscore(w, sx, ad, "WAZ")
+                if z is not None and BIV["WAZ"][0] <= z <= BIV["WAZ"][1]:
+                    df.loc[idx, "WAZ"] = round(z, 2)
+            if can_haz and pd.notna(h):
+                z = compute_zscore(h, sx, ad, "HAZ")
+                if z is not None and BIV["HAZ"][0] <= z <= BIV["HAZ"][1]:
+                    df.loc[idx, "HAZ"] = round(z, 2)
+            if can_baz and pd.notna(b):
+                z = compute_zscore(b, sx, ad, "BAZ")
+                if z is not None and BIV["BAZ"][0] <= z <= BIV["BAZ"][1]:
+                    df.loc[idx, "BAZ"] = round(z, 2)
+
+    if can_waz:
+        df["Ind_Kurang_Berat_Badan"] = df["WAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
+    else:
+        _gap("underweight")
+    if can_haz:
+        df["Ind_Bantut"] = df["HAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
+    else:
+        _gap("stunting")
+    if can_baz:
+        df["Ind_Susut"] = df["BAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
+        df["Ind_Berlebihan_BB"] = df["BAZ"].apply(lambda z: z > 1 if pd.notna(z) else False)
+        df["Ind_Obes"] = df["BAZ"].apply(lambda z: z > 2 if pd.notna(z) else False)
+    else:
+        _gap("wasting")
+        _gap("overweight")
+
+    indicators_available = sorted(
+        n for n in ("underweight", "stunting", "wasting", "overweight")
+        if n not in unavailable
+    )
+
+    stats["final_count"] = len(df)
+    stats["total_dropped"] = stats["raw_count"] - stats["final_count"]
+    stats["coverage"] = coverage
+    stats["assumptions"] = assumptions
+    stats["indicators_available"] = indicators_available
+    stats["indicators_unavailable"] = unavailable
+    return df, stats
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN CLEANING DISPATCHER
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -699,8 +913,10 @@ def clean_data(df: pd.DataFrame, data_type: str) -> tuple[pd.DataFrame, dict]:
     
     Args:
         df: Raw DataFrame
-        data_type: One of 'kpm', 'myvass', 'ncdc'
-    
+        data_type: 'kpm', 'myvass', 'ncdc', or anything else (incl.
+            'unknown'/'klinik') which routes to the conservative generic
+            cleaner. klinik is a test dataset, NOT a supported schema.
+
     Returns:
         tuple: (cleaned_dataframe, statistics_dict)
     """
@@ -710,8 +926,9 @@ def clean_data(df: pd.DataFrame, data_type: str) -> tuple[pd.DataFrame, dict]:
         return clean_myvass(df)
     elif data_type == "ncdc":
         return clean_ncdc(df)
-    else:
-        raise ValueError(f"Unknown data type: {data_type}")
+    # unknown / klinik / any unsupported schema → generic (never ValueError,
+    # never silently mis-routed to clean_myvass).
+    return clean_generic(df)
 
 
 def detect_data_type(columns: list[str], filename: str = "") -> str:

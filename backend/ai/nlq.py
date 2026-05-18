@@ -71,7 +71,10 @@ Rules:
 - The DataFrame is available as `df` (all columns are strings unless stated otherwise)
 - Store your final answer in a variable called `result`
 - result must be a scalar, list, dict, or small DataFrame (max 20 rows)
-- Use only pd, np, and df — no imports, no file I/O
+- `pd` (pandas) and `np` (numpy) are already available — prefer them directly
+- If you must import, only these are allowed: pandas, numpy, math, datetime, re, statistics, json, collections, itertools, functools, decimal
+- Standard builtins (len, sum, round, sorted, min, max, etc.) are available
+- No file or OS access (no open, os, sys, subprocess) — it will be rejected
 - Return only the code block, no explanation"""
 
 ANSWER_SYSTEM = """You are SmartDQC, a bilingual (Bahasa Malaysia and English) data analyst for KKM.
@@ -103,6 +106,35 @@ def _result_to_json_safe(result) -> object:
     if hasattr(result, "item"):
         return result.item()
     return result
+
+
+def _ensure_answer(ans, error: str | None) -> dict:
+    """Guarantee a non-empty bilingual {bm,en} answer.
+
+    A blank answer is what makes the frontend fall back to String(r.data)
+    and render '[object Object]'. So the model/sandbox failing must still
+    yield a readable message, never an empty string.
+    """
+    bm = en = ""
+    if isinstance(ans, dict):
+        bm = str(ans.get("bm") or "").strip()
+        en = str(ans.get("en") or "").strip()
+    elif isinstance(ans, str):
+        bm = en = ans.strip()
+
+    if not bm and not en:
+        if error:
+            snippet = str(error).strip().splitlines()[-1][:200]
+            en = f"Could not compute an answer for that question ({snippet})."
+            bm = f"Tidak dapat mengira jawapan untuk soalan itu ({snippet})."
+        else:
+            en = "No answer could be produced — please rephrase the question."
+            bm = "Tiada jawapan dapat dihasilkan — sila ubah soalan."
+
+    # Never leave one side blank.
+    bm = bm or en
+    en = en or bm
+    return {"bm": bm, "en": en}
 
 
 def answer_query(query: str, df: pd.DataFrame) -> dict:
@@ -147,7 +179,7 @@ Respond with this exact JSON:
     chart_b64 = _result_to_chart(result_safe)
 
     return {
-        "answer":    answer_json.get("answer", {"bm": "", "en": ""}),
+        "answer":    _ensure_answer(answer_json.get("answer"), error),
         "result":    result_safe,
         "code_used": code,
         "chart_b64": chart_b64,

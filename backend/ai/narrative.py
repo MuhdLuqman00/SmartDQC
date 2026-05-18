@@ -51,6 +51,23 @@ def _extract_json(raw: str) -> dict:
     return json.loads(raw)
 
 
+_EMPTY_KEYS = ["who", "what", "when", "where", "why", "how"]
+
+
+def _insights_fallback(message_en: str, message_bm: str, flag: str) -> dict:
+    """A clearly-flagged, non-blank insights payload.
+
+    A silent empty narrative renders as 'No narrative produced.' with no
+    explanation; this surfaces a visible reason + an explainability flag so
+    the user knows to retry rather than seeing a blank panel.
+    """
+    return {
+        "executive_summary": {"bm": message_bm, "en": message_en},
+        "insights_5w1h": {d: {"bm": "", "en": ""} for d in _EMPTY_KEYS},
+        "explainability": {"flags": [flag]},
+    }
+
+
 def generate_insights(eda_result: dict) -> dict:
     context = build_context(eda_result)
     prompt = f"""Based on this KKM health dataset analysis, produce a JSON response with executive summary and 5W1H insights.
@@ -75,14 +92,30 @@ Respond with this exact JSON structure:
 }}"""
 
     raw = generate(prompt, system=INSIGHTS_SYSTEM, json_mode=True)
+    if not raw or not raw.strip():
+        return _insights_fallback(
+            "AI insight generation returned no output — the model may be "
+            "loading or offline. Please retry in a moment.",
+            "Penjanaan wawasan AI tidak menghasilkan output — model mungkin "
+            "sedang dimuatkan atau luar talian. Sila cuba semula sebentar lagi.",
+            "empty_response",
+        )
     try:
         return _extract_json(raw)
     except Exception:
-        return {
-            "executive_summary": {"bm": raw[:500], "en": raw[:500]},
-            "insights_5w1h": {d: {"bm": "", "en": ""} for d in ["who", "what", "when", "where", "why", "how"]},
-            "explainability": {"flags": []},
-        }
+        return _insights_fallback(
+            "AI insight could not be parsed (model returned non-JSON output). "
+            "Please retry.",
+            "Wawasan AI tidak dapat dihuraikan (model memberi output bukan JSON). "
+            "Sila cuba semula.",
+            "parse_error",
+        )
+
+
+def raw_ok(insights: dict) -> bool:
+    """True if insights is a real model result (not a flagged fallback)."""
+    flags = (insights.get("explainability") or {}).get("flags") or []
+    return not any(f in ("empty_response", "parse_error") for f in flags)
 
 
 def generate_recommendations(eda_result: dict, insights: dict) -> dict:
@@ -111,11 +144,17 @@ Respond with this exact JSON structure:
 
 Provide 3-5 recommendations ordered by priority (high/medium/low)."""
 
+    if not raw_ok(insights):
+        # Insights failed; don't waste a second model call or imply success.
+        return {"recommendations": [], "_rec_flag": "skipped_insights_failed"}
+
     raw = generate(prompt, system=RECOMMENDATIONS_SYSTEM, json_mode=True)
+    if not raw or not raw.strip():
+        return {"recommendations": [], "_rec_flag": "empty_response"}
     try:
         return _extract_json(raw)
     except Exception:
-        return {"recommendations": []}
+        return {"recommendations": [], "_rec_flag": "parse_error"}
 
 
 def generate_narrative(eda_result: dict) -> dict:

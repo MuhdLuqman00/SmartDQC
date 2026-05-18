@@ -19,7 +19,10 @@ import pandas as pd
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 # Default path to the folder containing the 6 WHO Excel files.
 # Can be overridden by setting the WHO_ZSCORE_DIR environment variable.
-_DEFAULT_ZSCORE_DIR = os.environ.get("WHO_ZSCORE_DIR", "/app/data/zscore")
+_DEFAULT_ZSCORE_DIR = os.environ.get(
+    "WHO_ZSCORE_DIR",
+    str(Path(__file__).parent.parent.parent / "data" / "zscore"),
+)
 ZSCORE_DIR = _DEFAULT_ZSCORE_DIR
 
 # Expected filenames
