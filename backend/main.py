@@ -34,7 +34,7 @@ from typing import List, Optional
 
 from .config import STANDARD_SCHEMA, auto_suggest_mapping, detect_source_type
 from .ai.schema_mapper import ai_suggest_mapping, _needs_ai_assist
-from .eda.runner import run_eda, json_safe
+from .eda.runner import run_eda, run_eda_auto, json_safe
 from .export.tableau import (
     build_aggregated_table,
     to_excel as tbl_excel,
@@ -1146,7 +1146,7 @@ def _get_or_build_narrative(key: str, entry: dict) -> dict:
         return cached
     try:
         source_type = (entry.get("stats") or {}).get("source_type") or "myvass"
-        eda_result = run_eda(entry["df"], {}, source_type)
+        eda_result = run_eda_auto(entry["df"], source_type)
         narrative = generate_narrative(eda_result)
         _cache_set_narrative(key, narrative)
         return narrative
@@ -1510,6 +1510,25 @@ async def clean_run_endpoint(
 
     summary = _summarise_cleaning(stats, len(df), len(cleaned_df))
 
+    # Authoritative "Data Quality Score" = the 7-dimension rubric (the same
+    # one the AI narrative and report use), NOT the row-survival ratio
+    # _summarise_cleaning produces. Scoring it here makes the dashboard,
+    # sessions list and dataset library agree with the narrative/report
+    # instead of showing a divergent 100 vs 30/D. Falls back to the
+    # survival ratio if EDA scoring fails — must never break the clean run.
+    quality_score = summary["quality_score"]
+    quality_grade = None
+    try:
+        _dq = (run_eda_auto(cleaned_df, effective_type)
+               .get("data_quality_score") or {})
+        if _dq.get("score") is not None:
+            quality_score = _dq["score"]
+            quality_grade = _dq.get("grade")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "Quality rubric scoring failed for %s; using survival ratio: %s",
+            filename, exc)
+
     # Convert cleaned data to records
     cleaned_records = cleaned_df.replace({np.nan: None}).to_dict(orient="records")
 
@@ -1521,7 +1540,8 @@ async def clean_run_endpoint(
             **(stats or {}),
             "filename": filename,
             "source_type": effective_type,
-            "quality_score": summary["quality_score"],
+            "quality_score": quality_score,
+            "quality_grade": quality_grade,
         },
     )
 
@@ -1533,7 +1553,7 @@ async def clean_run_endpoint(
             row_count=len(cleaned_df),
             result={
                 **(stats or {}),
-                "quality_score": summary["quality_score"],
+                "quality_score": quality_score,
                 "issues": summary["top_issues"],
             },
             db=db,
@@ -1555,7 +1575,8 @@ async def clean_run_endpoint(
                 "cache_id": new_cache_id,
                 "rows_before": len(df),
                 "rows_after": len(cleaned_df),
-                "quality_score": summary["quality_score"],
+                "quality_score": quality_score,
+                "quality_grade": quality_grade,
                 "rules_applied": summary["rules_applied"],
                 "top_issues": summary["top_issues"],
             }
@@ -2029,7 +2050,13 @@ async def report_pptx_endpoint(
     entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(404, "cache_id not found — run /clean/run first")
-    eda_result = entry["stats"]
+    # The cached entry["stats"] is the cleaner's per-rule counts, NOT a
+    # run_eda result — feeding it to the report builder left the data
+    # quality overview / indicators / charts blank. Build the real EDA
+    # report (same run_eda_auto the AI narrative uses) so the report is
+    # populated and consistent with the narrative + dashboard score.
+    _src = (entry.get("stats") or {}).get("source_type") or "myvass"
+    eda_result = run_eda_auto(entry["df"], _src)
     kpi_result = compute_kpi_dashboard(entry["df"]) if include_kpi else None
     narrative = _get_or_build_narrative(cache_id, entry)
     data = build_pptx_bytes(eda_result, narrative, kpi_result=kpi_result)
@@ -2050,7 +2077,13 @@ async def report_pdf_endpoint(
     entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(404, "cache_id not found — run /clean/run first")
-    eda_result = entry["stats"]
+    # The cached entry["stats"] is the cleaner's per-rule counts, NOT a
+    # run_eda result — feeding it to the report builder left the data
+    # quality overview / indicators / charts blank. Build the real EDA
+    # report (same run_eda_auto the AI narrative uses) so the report is
+    # populated and consistent with the narrative + dashboard score.
+    _src = (entry.get("stats") or {}).get("source_type") or "myvass"
+    eda_result = run_eda_auto(entry["df"], _src)
     kpi_result = compute_kpi_dashboard(entry["df"]) if include_kpi else None
     narrative = _get_or_build_narrative(cache_id, entry)
     data = build_pdf_bytes(eda_result, narrative, kpi_result=kpi_result)
@@ -2860,7 +2893,7 @@ async def ai_narrative(cache_id: str = Query(...)):
     df = entry["df"]
     source_type = (entry.get("stats") or {}).get("source_type") or "myvass"
     try:
-        eda_result = run_eda(df, {}, source_type)
+        eda_result = run_eda_auto(df, source_type)
         narrative = generate_narrative(eda_result)
     except Exception as e:
         raise HTTPException(500, f"Narrative generation failed: {e}")

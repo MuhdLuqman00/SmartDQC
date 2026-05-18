@@ -677,3 +677,22 @@ def run_eda(df: pd.DataFrame, mapping: dict, source_type: str,
     report["_cleaned_columns"] = preview_cols
 
     return report
+
+
+def run_eda_auto(df: pd.DataFrame, source_type: str, **kwargs) -> dict:
+    """run_eda with an auto-derived column mapping.
+
+    Cleaned data is cached with Title-Case canonical columns (Berat_kg,
+    MyKid, WAZ). compute_quality_score / indicator flagging expect the
+    lowercase canonical names (berat_kg, id, waz). Callers that re-run EDA
+    on cleaned data with an EMPTY mapping (the AI-narrative and report
+    paths) therefore starved the rubric to ~30/D with no indicators.
+
+    Deriving the mapping the backend can already infer lets the rubric and
+    indicators score the data the dataframe actually contains, so the
+    narrative/report match what the rest of the app reports.
+    """
+    from ..config import auto_suggest_mapping
+
+    mapping = auto_suggest_mapping(list(df.columns), source_type) or {}
+    return run_eda(df, mapping, source_type, **kwargs)

@@ -50,36 +50,45 @@ def _apply_spine_style(ax: plt.Axes) -> None:
 # ---------------------------------------------------------------------------
 
 _QUALITY_DIM_LABELS = {
-    "completeness":  "Completeness",
-    "consistency":   "Consistency",
-    "validity":      "Validity",
-    "accuracy":      "Accuracy",
-    "uniqueness":    "Uniqueness",
-    "timeliness":    "Timeliness",
-    "accessibility": "Accessibility",
+    "field_coverage":   "Field Coverage",
+    "ic_validity":      "IC Validity",
+    "missing_critical": "Critical Completeness",
+    "duplicates":       "Uniqueness",
+    "bmi_consistency":  "BMI Consistency",
+    "spelling":         "Spelling",
+    "zscore_coverage":  "Z-score Coverage",
 }
 
 
 def chart_quality_bar(eda_result: dict[str, Any]) -> bytes | None:
-    """Horizontal bar chart of quality dimension scores."""
-    quality = eda_result.get("quality") or {}
+    """Horizontal bar chart of quality dimension scores.
+
+    Reads data_quality_score.breakdown (run_eda's actual schema). Each
+    dimension is normalised to a 0-100 percentage (score / max * 100) so
+    bars with different point weights stay comparable. The legacy
+    eda["quality"] dict this once read is never emitted by run_eda, so
+    the chart always returned None / blank.
+    """
+    dq = eda_result.get("data_quality_score") or {}
+    breakdown = dq.get("breakdown") or {}
 
     dims: dict[str, float] = {}
     for key, label in _QUALITY_DIM_LABELS.items():
-        val = quality.get(key) or quality.get(f"{key}_score")
-        if val is not None:
-            dims[label] = float(val)
+        dim = breakdown.get(key)
+        if not isinstance(dim, dict):
+            continue
+        score = dim.get("score")
+        mx = dim.get("max")
+        if score is None or not mx:
+            continue
+        dims[label] = round(float(score) / float(mx) * 100, 1)
 
-    # Fall back to composite metrics if no per-dimension scores
+    # Fall back to the composite score if the breakdown is unavailable.
     if not dims:
-        overall      = quality.get("overall_score")
-        completeness = quality.get("overall_completeness")
-        if overall is None and completeness is None:
+        overall = dq.get("score")
+        if overall is None:
             return None
-        if overall is not None:
-            dims["Overall Score"] = float(overall)
-        if completeness is not None:
-            dims["Completeness"] = float(completeness)
+        dims["Overall Score"] = float(overall)
 
     labels = list(dims.keys())
     values = [dims[l] for l in labels]

@@ -166,8 +166,12 @@ def _slide_cover(prs, layout, eda: dict, district: str, date_range: str):
     s = prs.slides.add_slide(layout)
     _bg(s, KKM_TEAL_DARK)
     today  = date.today().strftime("%d %B %Y")
-    source = eda.get("summary", {}).get("source_type", "N/A").upper()
-    rows   = eda.get("summary", {}).get("total_rows", "N/A")
+    # run_eda emits source_type/total_rows at the top level; the legacy
+    # nested "summary" shape is kept only as a fallback.
+    source = (eda.get("source_type")
+              or eda.get("summary", {}).get("source_type", "N/A")).upper()
+    rows   = eda.get("total_rows",
+                     eda.get("summary", {}).get("total_rows", "N/A"))
 
     _box(s, "Kementerian Kesihatan Malaysia", 0.6, 0.5, 12, 0.45,
          size=11, color=KKM_TEAL_LIGHT)
@@ -200,26 +204,55 @@ def _slide_exec_summary(prs, layout, narrative: dict, district: str):
     _footer_bar_pptx(s, district)
 
 
+def _quality_overview_rows(eda: dict) -> list[list[str]]:
+    """Quality-overview metric rows from run_eda()'s ACTUAL schema.
+
+    The report historically read eda["quality"]["overall_score"] /
+    "overall_completeness" / "missing_rate" and outliers["total_flagged"]
+    — keys run_eda never emits. run_eda produces data_quality_score
+    (score/grade/label), data_completeness (pct_complete /
+    pct_missing_critical) and a per-column outliers dict. Reading the
+    legacy keys made every value render as "-".
+    """
+    dq   = eda.get("data_quality_score") or {}
+    dc   = eda.get("data_completeness") or {}
+    outl = eda.get("outliers") or {}
+
+    score = dq.get("score")
+    grade = dq.get("grade")
+    label = dq.get("label")
+    if score is not None and grade:
+        score_txt = f"{score} (Grade {grade}" + (f" - {label})" if label else ")")
+    elif score is not None:
+        score_txt = str(score)
+    else:
+        score_txt = "-"
+
+    total_outliers = sum(
+        int(v.get("combined_outliers", 0) or 0)
+        for v in outl.values()
+        if isinstance(v, dict)
+    ) if isinstance(outl, dict) else 0
+
+    pct_complete = dc.get("pct_complete")
+    pct_missing  = dc.get("pct_missing_critical")
+    return [
+        ["Overall Quality Score / Skor Kualiti", score_txt],
+        ["Completeness / Kelengkapan",
+         f"{pct_complete}%" if pct_complete is not None else "-"],
+        ["Missing Data Rate / Kadar Data Hilang",
+         f"{pct_missing}%" if pct_missing is not None else "-"],
+        ["Outliers Flagged / Pencilan Ditanda", str(total_outliers)],
+    ]
+
+
 def _slide_quality(prs, layout, eda: dict, district: str):
     s = prs.slides.add_slide(layout)
     _bg(s, KKM_TEAL_LIGHT)
     _section_bar_pptx(s, "quality_overview")
-    quality    = eda.get("quality", {})
-    indicators = eda.get("indicators", {})
-    outliers   = eda.get("outliers", {})
 
     rows = [["Metric / Metrik", "Value / Nilai"]]
-    rows.append(["Overall Quality Score / Skor Kualiti", str(quality.get("overall_score", "-"))])
-    rows.append(["Completeness / Kelengkapan", f"{quality.get('overall_completeness', '-')}%"])
-    rows.append(["Missing Data Rate / Kadar Data Hilang", str(quality.get("missing_rate", "-"))])
-    rows.append(["Outliers Flagged / Pencilan Ditanda", str(outliers.get("total_flagged", "-"))])
-    for flag in ["stunting_rate", "wasting_rate", "underweight_rate", "overweight_rate"]:
-        if flag in indicators:
-            val = indicators[flag]
-            if isinstance(val, float):
-                val = round(val * 100, 1)
-            label = flag.replace("_rate", "").capitalize()
-            rows.append([label, f"{val}%"])
+    rows.extend(_quality_overview_rows(eda))
 
     _pptx_table(s, rows, l=0.4, t=0.75, w=6.0, h=min(0.45 * len(rows), 6.3))
 
@@ -418,8 +451,12 @@ def _stamp_footer(canvas, district: str, year: int):
 def _pdf_section_cover(story, eda: dict, district: str, date_range: str,
                        cover_h, small):
     today  = date.today().strftime("%d %B %Y")
-    source = eda.get("summary", {}).get("source_type", "N/A").upper()
-    rows   = eda.get("summary", {}).get("total_rows", "N/A")
+    # run_eda emits source_type/total_rows at the top level; the legacy
+    # nested "summary" shape is kept only as a fallback.
+    source = (eda.get("source_type")
+              or eda.get("summary", {}).get("source_type", "N/A")).upper()
+    rows   = eda.get("total_rows",
+                     eda.get("summary", {}).get("total_rows", "N/A"))
     meta   = (
         f"Daerah / District: {district}  |  Sumber / Source: {source}"
         f"  |  Rekod / Records: {rows}"
@@ -465,25 +502,9 @@ def _pdf_section_quality(story, eda: dict, sec_label, h2, body):
     story.append(_section_bar_pdf(_sec("quality_overview", "en"),
                                   _sec("quality_overview", "bm"), sec_label))
     story.append(Spacer(1, 0.2 * cm))
-    quality    = eda.get("quality", {})
-    indicators = eda.get("indicators", {})
-    outliers   = eda.get("outliers", {})
 
     data = [["Metric / Metrik", "Value / Nilai"]]
-    data.append(["Overall Quality Score / Skor Kualiti",
-                 str(quality.get("overall_score", "-"))])
-    data.append(["Completeness / Kelengkapan",
-                 f"{quality.get('overall_completeness', '-')}%"])
-    data.append(["Missing Data Rate / Kadar Data Hilang",
-                 str(quality.get("missing_rate", "-"))])
-    data.append(["Outliers Flagged / Pencilan Ditanda",
-                 str(outliers.get("total_flagged", "-"))])
-    for flag in ["stunting_rate", "wasting_rate", "underweight_rate", "overweight_rate"]:
-        if flag in indicators:
-            val = indicators[flag]
-            if isinstance(val, float):
-                val = round(val * 100, 1)
-            data.append([flag.replace("_rate", "").capitalize(), f"{val}%"])
+    data.extend(_quality_overview_rows(eda))
 
     tbl = Table(data, colWidths=[11 * cm, 6 * cm])
     tbl.setStyle(TableStyle(_base_table_style()))

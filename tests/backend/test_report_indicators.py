@@ -28,12 +28,48 @@ def _pdf_text(data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 def _eda():
+    """Mirrors run_eda()'s ACTUAL output schema.
+
+    The old fixture used legacy keys (summary / quality.overall_score /
+    flat indicators / outliers.total_flagged) that run_eda never emits —
+    the same fiction that made the report's quality overview render blank
+    in production. This pins the real producer -> consumer contract.
+    """
     return {
-        "summary":    {"source_type": "myvass", "total_rows": 100},
-        "quality":    {"overall_score": 82, "overall_completeness": 91.5,
-                       "missing_rate": 0.08},
-        "indicators": {"stunting_rate": 0.185, "wasting_rate": 0.032},
-        "outliers":   {"total_flagged": 7},
+        "source_type":   "myvass",
+        "total_rows":    100,
+        "total_columns": 12,
+        "data_quality_score": {
+            "score": 82.0, "grade": "B", "label": "Baik",
+            "breakdown": {
+                "field_coverage":   {"score": 16.5, "max": 20},
+                "ic_validity":      {"score": 15.0, "max": 15},
+                "missing_critical": {"score": 20.0, "max": 20},
+                "duplicates":       {"score": 12.0, "max": 15},
+                "bmi_consistency":  {"score": 10.0, "max": 10},
+                "spelling":         {"score":  4.5, "max":  5},
+                "zscore_coverage":  {"score":  4.0, "max": 15},
+            },
+        },
+        "data_completeness": {"pct_complete": 91.5,
+                              "pct_missing_critical": 0.08},
+        "outliers": {
+            "berat_kg": {"column": "berat_kg", "combined_outliers": 7},
+        },
+        "indicators": {
+            "bawah_5_tahun": {
+                "stunting": {
+                    "label": "Bantut (HAZ < -2)",
+                    "overall": {"pct": 18.5, "n_affected": 18,
+                                "n_total": 100},
+                },
+                "wasting": {
+                    "label": "Susut (BAZ < -2)",
+                    "overall": {"pct": 3.2, "n_affected": 3,
+                                "n_total": 100},
+                },
+            },
+        },
     }
 
 
