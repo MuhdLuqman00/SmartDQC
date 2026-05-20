@@ -63,7 +63,23 @@ interface ScatterBlock {
   y_label: string;
   points: { x: number; y: number }[];
 }
-type ChartBlocks = Record<string, HistogramBlock | ScatterBlock>;
+/* build_chart_blocks also emits pies / donuts / trend rows with very
+   different shapes. We render only histograms and scatters — the
+   isHistogram / isScatter guards below skip anything else cleanly. */
+type ChartBlocks = Record<string, unknown>;
+
+function isHistogram(b: unknown): b is HistogramBlock {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+  const obj = b as Record<string, unknown>;
+  if (typeof obj.label !== 'string' || !Array.isArray(obj.data)) return false;
+  const first = obj.data[0];
+  return !first || (typeof first === 'object' && first !== null && 'range' in first);
+}
+
+function isScatter(b: unknown): b is ScatterBlock {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+  return Array.isArray((b as Record<string, unknown>).points);
+}
 
 // ── Status palette helpers (Navy-Gold-Brick) ─────────────────────────────────
 
@@ -555,9 +571,11 @@ export function GeoPage() {
                   : [...DISTRIBUTION_KEYS.filter(k => k in blocks), ...(SCATTER_KEY in blocks ? [SCATTER_KEY] : [])]
                 ).map(key => {
                   const b = blocks[key];
-                  if (!b) return null;
-                  if ('points' in b) return <ScatterPanel key={key} block={b} />;
-                  return <HistogramPanel key={key} block={b} />;
+                  if (isScatter(b))   return <ScatterPanel key={key} block={b} />;
+                  if (isHistogram(b)) return <HistogramPanel key={key} block={b} />;
+                  // Pies/donuts/trend rows have different shapes; skip them
+                  // here — they're surfaced elsewhere in the app.
+                  return null;
                 })}
               </div>
             ) : null}

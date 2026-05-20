@@ -4,8 +4,6 @@ import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { EmptyState } from '../components/EmptyState';
 
-const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000';
-
 interface Dataset {
   id: string;
   filename: string;
@@ -125,18 +123,15 @@ export function LinkagePage() {
     if (!canRun) return;
     setExporting(true);
     try {
-      const r = await fetch(`${BASE}/entity/link/v2/export`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(localStorage.getItem('smartdqc_token')
-            ? { Authorization: `Bearer ${localStorage.getItem('smartdqc_token')}` }
-            : {}),
-        },
-        body: JSON.stringify({ dataset_ids: Array.from(selected), ...settings }),
-      });
-      if (!r.ok) throw new Error('export failed');
-      const blob = await r.blob();
+      /* Use the axios api client (which already adds the bearer token from
+         the 'token' localStorage key — same one AuthContext writes — so we
+         don't drift out of sync with the rest of the app). responseType
+         'blob' makes axios hand back the binary CSV. */
+      const r = await api.post('/entity/link/v2/export',
+        { dataset_ids: Array.from(selected), ...settings },
+        { responseType: 'blob' },
+      );
+      const blob = r.data as Blob;
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'SmartDQC_Linkage.csv';
