@@ -35,6 +35,7 @@ from typing import List, Optional
 from .config import STANDARD_SCHEMA, auto_suggest_mapping, detect_source_type
 from .ai.schema_mapper import ai_suggest_mapping, _needs_ai_assist
 from .eda.runner import run_eda, run_eda_auto, json_safe
+from .eda.charts import build_chart_blocks
 from .export.tableau import (
     build_aggregated_table,
     to_excel as tbl_excel,
@@ -2255,6 +2256,29 @@ async def kpi_dashboard_endpoint(
             df = df[df[state_col].astype(str).str.strip().str.lower() == state.strip().lower()]
     result = compute_kpi_dashboard(df)
     return JSONResponse(content=json_safe(result))
+
+
+@app.get("/charts/blocks")
+async def charts_blocks_endpoint(
+    cache_id: str = Query(..., description="UUID from /clean/run or /join/run"),
+):
+    """Return per-column histograms / scatter blocks for the cached dataset.
+
+    Drives the "Data Distributions" section on GeoPage and the optional
+    chart embeds in PDF/PPTX reports. Output is the same shape produced by
+    build_chart_blocks(df) and embedded under "charts" inside run_eda's
+    report — exposed here so already-cached datasets can render the
+    blocks without re-running EDA.
+    """
+    entry = _cache_get(cache_id)
+    if entry is None:
+        raise HTTPException(404, "cache_id not found — run /clean/run first or check the UUID")
+    try:
+        blocks = build_chart_blocks(entry["df"])
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("build_chart_blocks failed for %s: %s", cache_id, exc)
+        raise HTTPException(500, f"Chart computation failed: {exc}")
+    return JSONResponse(content=json_safe(blocks))
 
 
 class TrajectoryRequest(BaseModel):

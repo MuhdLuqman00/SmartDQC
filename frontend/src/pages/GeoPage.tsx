@@ -1,13 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  ScatterChart, Scatter, ZAxis,
+} from 'recharts';
 import { api } from '../api/client';
 import { ChoroplethMap, computeAggregates } from '../components/ChoroplethMap';
 import type { District } from '../components/ChoroplethMap';
 import { SessionGuard } from '../components/SessionGuard';
+import { ChartTooltip } from '../components/ChartTooltip';
 import { useSession } from '../context/SessionContext';
 import { useLang } from '../context/LanguageContext';
 
 // ── KPI types ─────────────────────────────────────────────────────────────────
+
+type IndicatorKey = 'stunting' | 'wasting' | 'underweight' | 'overweight';
 
 interface KpiIndicator {
   key: string; label_en: string; label_bm: string;
@@ -16,8 +22,6 @@ interface KpiIndicator {
   rag: 'Green' | 'Amber' | 'Red';
 }
 interface KpiGroupRow {
-  // Backend keys the grouping value by dimension: by_state→state,
-  // by_gender→gender, by_age→group. Plus per-group rates/status/n.
   state?: string; gender?: string; group?: string;
   n?: number;
   rates?: Record<string, number>;
@@ -47,50 +51,74 @@ interface RiskResult {
   high_risk_sample: RiskSampleRow[];
 }
 
-// ── RAG helpers ───────────────────────────────────────────────────────────────
+// ── Chart blocks types ───────────────────────────────────────────────────────
 
-const RAG_COLOR: Record<'green' | 'amber' | 'red', string> = {
-  green: 'var(--success)',
-  amber: 'var(--warning)',
-  red:   'var(--danger)',
+interface HistogramBlock {
+  label: string;
+  data: { range: string; count: number }[];
+}
+interface ScatterBlock {
+  title: string;
+  x_label: string;
+  y_label: string;
+  points: { x: number; y: number }[];
+}
+type ChartBlocks = Record<string, HistogramBlock | ScatterBlock>;
+
+// ── Status palette helpers (Navy-Gold-Brick) ─────────────────────────────────
+
+type Status = 'good' | 'watch' | 'critical' | 'neutral';
+
+const STATUS_VAR: Record<Status, string> = {
+  good:     'var(--status-good)',
+  watch:    'var(--status-watch)',
+  critical: 'var(--status-critical)',
+  neutral:  'var(--status-neutral)',
 };
-const RAG_BG_TOKEN: Record<'green' | 'amber' | 'red', string> = {
-  green: 'var(--success-bg)',
-  amber: 'var(--warning-bg)',
-  red:   'var(--danger-bg)',
-};
-const RAG_LABEL_MY: Record<'green' | 'amber' | 'red', string> = {
-  green: 'Baik',
-  amber: 'Sederhana',
-  red:   'Kritikal',
+const STATUS_BG: Record<Status, string> = {
+  good:     'var(--status-good-bg)',
+  watch:    'var(--status-watch-bg)',
+  critical: 'var(--status-critical-bg)',
+  neutral:  'var(--surface-2)',
 };
 
-function ragToLower(r?: string): 'green' | 'amber' | 'red' {
-  const v = (r || '').toLowerCase();
-  return v === 'red' ? 'red' : v === 'amber' ? 'amber' : 'green';
+function ragToStatus(rag?: string): Status {
+  const v = (rag || '').toLowerCase();
+  if (v === 'red') return 'critical';
+  if (v === 'amber') return 'watch';
+  if (v === 'green') return 'good';
+  return 'neutral';
 }
 
-const ragFill = (r?: string) =>
-  r === 'Red' ? 'var(--danger)' : r === 'Amber' ? 'var(--warning)' : 'var(--kkm-teal)';
+function tierToStatus(tier: string): Status {
+  const v = tier.toLowerCase();
+  if (v.includes('high') || v.includes('tinggi')) return 'critical';
+  if (v.includes('med') || v.includes('sederhana')) return 'watch';
+  if (v.includes('low') || v.includes('rendah')) return 'good';
+  return 'neutral';
+}
 
-function RagBadge({ rag }: { rag: 'green' | 'amber' | 'red' }) {
+// ── Small atoms ───────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: Status }) {
   const { t } = useLang();
-  const label = t(
-    { green: 'Good', amber: 'Moderate', red: 'Critical' }[rag],
-    RAG_LABEL_MY[rag]
-  );
+  const label = status === 'good' ? t('Good', 'Baik')
+    : status === 'watch' ? t('Moderate', 'Sederhana')
+    : status === 'critical' ? t('Critical', 'Kritikal')
+    : t('No data', 'Tiada data');
   return (
     <span style={{
       display: 'inline-block', padding: '2px 10px', borderRadius: 6,
-      fontSize: 11, fontWeight: 700, background: RAG_BG_TOKEN[rag],
-      color: RAG_COLOR[rag], border: `0.5px solid ${RAG_COLOR[rag]}`, letterSpacing: '0.04em',
+      fontSize: 11, fontWeight: 700, background: STATUS_BG[status],
+      color: STATUS_VAR[status], border: `0.5px solid ${STATUS_VAR[status]}`,
+      letterSpacing: '0.04em',
     }}>
       {label}
     </span>
   );
 }
 
-function KpiCard({ label, value, rag }: { label: string; value: number; rag: 'green' | 'amber' | 'red' }) {
+function KpiCard({ label, value, status }: { label: string; value: number; status: Status }) {
   return (
     <div style={{
       background: 'var(--surface-2)', border: '0.5px solid var(--border)',
@@ -99,10 +127,10 @@ function KpiCard({ label, value, rag }: { label: string; value: number; rag: 'gr
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         {label}
       </div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--navy)' }}>
+      <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)' }}>
         {(value * 100).toFixed(1)}%
       </div>
-      <RagBadge rag={rag} />
+      <StatusBadge status={status} />
     </div>
   );
 }
@@ -118,22 +146,20 @@ const STATE_TO_CODE: Record<string, string> = {
   SARAWAK: 'swk', TERENGGANU: 'trg',
 };
 
-function toDistricts(k: KpiDashboard | null): District[] {
+function toDistricts(k: KpiDashboard | null, ind: IndicatorKey): District[] {
   if (!k) return [];
-  // by_state rows are keyed `state` (kpi.py _group_breakdown(..., "state")),
-  // NOT `group`. Mirror DashboardPage: per-state rates + per-state RAG so the
-  // choropleth actually binds and varies (was uncolored/monochrome).
   return k.by_state.map(row => {
     const rates = (row.rates as Record<string, number>) ?? {};
     const status = (row.status as Record<string, string>) ?? {};
     const stateName = String(row.state ?? '');
+    const ragKey = ragToStatus(status[ind] ?? k.overall_status);
     return {
       name: STATE_TO_CODE[stateName.toUpperCase()] ?? stateName.toLowerCase(),
       stunting_rate: Number(rates.stunting ?? 0) / 100,
       wasting_rate: Number(rates.wasting ?? 0) / 100,
       underweight_rate: Number(rates.underweight ?? 0) / 100,
       overweight_rate: Number(rates.overweight ?? 0) / 100,
-      risk_rag: ragToLower(String(status.stunting ?? k.overall_status)),
+      risk_rag: (ragKey === 'good' ? 'green' : ragKey === 'watch' ? 'amber' : 'red'),
       vs_target: 0,
     };
   });
@@ -141,49 +167,92 @@ function toDistricts(k: KpiDashboard | null): District[] {
 
 // ── Breakdown chart ───────────────────────────────────────────────────────────
 
-const RATE_LABELS: Record<string, string> = {
-  stunting: 'Stunting', wasting: 'Wasting',
-  underweight: 'Underweight', overweight: 'Overweight',
-};
+const labelKeyForRow = (row: KpiGroupRow, groupKey: string): string =>
+  String((row as Record<string, unknown>)[groupKey] ?? '');
 
-function normalizeBreakdown(rows: KpiGroupRow[], groupKey: string): KpiGroupRow[] {
-  return rows.map(row => {
-    const raw = row as Record<string, unknown>;
-    const rates = (raw.rates as Record<string, number>) ?? {};
-    return { group: String(raw[groupKey] ?? ''), ...rates } as KpiGroupRow;
-  });
-}
-
-function firstRateKey(rows: KpiGroupRow[]): string | null {
-  if (!rows.length) return null;
-  const r = rows[0];
-  return Object.keys(r).find(k => k !== 'group' && typeof r[k] === 'number') ?? null;
-}
-
-function rateTooltipFormatter(value: number, name: string) {
-  const label = RATE_LABELS[name] ?? (name.charAt(0).toUpperCase() + name.slice(1));
-  return [`${Number(value).toFixed(1)}%`, label];
-}
-
-function BreakdownChart({ title, rows }: { title: string; rows: KpiGroupRow[] }) {
-  const yKey = firstRateKey(rows);
-  if (!rows.length || !yKey) return null;
+function BreakdownChart({
+  title, rows, groupKey, indicator,
+}: {
+  title: string; rows: KpiGroupRow[]; groupKey: 'state' | 'gender' | 'group'; indicator: IndicatorKey;
+}) {
+  const { lang } = useLang();
+  const data = useMemo(() => rows.map(r => {
+    const rates = (r.rates as Record<string, number>) ?? {};
+    const status = (r.status as Record<string, string>) ?? {};
+    return {
+      label: labelKeyForRow(r, groupKey),
+      value: Number(rates[indicator] ?? 0),
+      status: ragToStatus(status[indicator]),
+      n: Number(r.n ?? 0),
+    };
+  }), [rows, groupKey, indicator]);
+  void lang;
+  if (!data.length) return null;
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)' }}>
       <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{title}</div>
       <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={rows}>
-          <XAxis dataKey="group" tick={{ fontSize: 10 }} interval={0} />
-          <YAxis tick={{ fontSize: 10 }} unit="%" domain={[0, 'auto']} />
-          <Tooltip formatter={rateTooltipFormatter} />
-          <Bar dataKey={yKey} fill="var(--kkm-blue)" />
+        <BarChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+          <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} interval={0} />
+          <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} unit="%" domain={[0, 'auto']} />
+          <Tooltip content={<ChartTooltip valueFormatter={v => typeof v === 'number' ? `${v.toFixed(1)}%` : String(v)} />} cursor={{ fill: 'var(--surface-2)' }} />
+          <Bar dataKey="value">
+            {data.map((d, i) => <Cell key={i} fill={STATUS_VAR[d.status]} />)}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
+// ── Distribution panels (driven by /charts/blocks) ───────────────────────────
+
+const DISTRIBUTION_KEYS = [
+  'bmi_distribution',
+  'age_months_computed_distribution',
+  'waz_distribution',
+  'haz_distribution',
+  'baz_distribution',
+] as const;
+
+const SCATTER_KEY = 'scatter_berat_kg_vs_tinggi_cm';
+
+function HistogramPanel({ block }: { block: HistogramBlock }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)' }}>
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{block.label}</div>
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={block.data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+          <XAxis dataKey="range" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} interval={Math.max(1, Math.floor(block.data.length / 8))} />
+          <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} allowDecimals={false} />
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
+          <Bar dataKey="count" fill="var(--kkm-sky)" radius={[2, 2, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function ScatterPanel({ block }: { block: ScatterBlock }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)' }}>
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{block.title}</div>
+      <ResponsiveContainer width="100%" height={200}>
+        <ScatterChart margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+          <XAxis type="number" dataKey="x" name={block.x_label} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+          <YAxis type="number" dataKey="y" name={block.y_label} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+          <ZAxis range={[14, 14]} />
+          <Tooltip content={<ChartTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+          <Scatter data={block.points} fill="var(--status-good)" fillOpacity={0.55} />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
+
+type RiskTierFilter = 'all' | 'high' | 'medium' | 'low';
 
 export function GeoPage() {
   const { cacheId } = useSession();
@@ -194,6 +263,13 @@ export function GeoPage() {
 
   const [risk, setRisk] = useState<RiskResult | null>(null);
   const [riskLoading, setRiskLoading] = useState(false);
+  const [riskTier, setRiskTier] = useState<RiskTierFilter>('all');
+
+  const [selectedIndicator, setSelectedIndicator] = useState<IndicatorKey>('stunting');
+
+  const [blocks, setBlocks] = useState<ChartBlocks | null>(null);
+  const [blocksLoading, setBlocksLoading] = useState(false);
+  const [showAllDist, setShowAllDist] = useState(false);
 
   useEffect(() => {
     if (!cacheId) return;
@@ -202,6 +278,15 @@ export function GeoPage() {
       .then(r => setKpi(r.data))
       .catch(() => setKpi(null))
       .finally(() => setKpiLoading(false));
+  }, [cacheId]);
+
+  useEffect(() => {
+    if (!cacheId) return;
+    setBlocksLoading(true);
+    api.get<ChartBlocks>(`/charts/blocks?cache_id=${cacheId}`)
+      .then(r => setBlocks(r.data))
+      .catch(() => setBlocks(null))
+      .finally(() => setBlocksLoading(false));
   }, [cacheId]);
 
   const runRisk = async () => {
@@ -214,15 +299,63 @@ export function GeoPage() {
     finally { setRiskLoading(false); }
   };
 
-  const districts = toDistricts(kpi);
+  const districts = toDistricts(kpi, selectedIndicator);
   const agg = computeAggregates(districts);
+
+  // ── Selected indicator label for chart headers ────────────────────────────
+  const indMeta = kpi?.indicators.find(i => i.key === selectedIndicator);
+  const indLabel = indMeta ? (lang === 'en' ? indMeta.label_en : indMeta.label_bm) : '';
+
+  // ── Risk distribution post-filter ─────────────────────────────────────────
+  const filteredDistribution = useMemo(() => {
+    if (!risk) return [] as { tier: string; count: number; status: Status }[];
+    return Object.entries(risk.distribution)
+      .filter(([tier]) => {
+        if (riskTier === 'all') return true;
+        const v = tier.toLowerCase();
+        if (riskTier === 'high') return v.includes('high') || v.includes('tinggi');
+        if (riskTier === 'medium') return v.includes('med') || v.includes('sederhana');
+        return v.includes('low') || v.includes('rendah');
+      })
+      .map(([tier, count]) => ({ tier, count, status: tierToStatus(tier) }));
+  }, [risk, riskTier]);
+
+  // ── Filtered high-risk sample / district summary ──────────────────────────
+  const filteredSample = useMemo(() => {
+    if (!risk?.high_risk_sample) return [];
+    if (riskTier === 'all') return risk.high_risk_sample;
+    return risk.high_risk_sample.filter(r => {
+      const v = String(r.risk_tier ?? '').toLowerCase();
+      if (riskTier === 'high') return v.includes('high') || v.includes('tinggi');
+      if (riskTier === 'medium') return v.includes('med') || v.includes('sederhana');
+      return v.includes('low') || v.includes('rendah');
+    });
+  }, [risk, riskTier]);
 
   return (
     <SessionGuard>
       <div style={{ padding: '4px 0' }}>
-        <h1 style={{ margin: '0 0 20px', fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>
-          {t('Geography & Risk Map', 'Peta Geografi & Risiko')}
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>
+            {t('Geography & Risk Map', 'Peta Geografi & Risiko')}
+          </h1>
+          <select
+            value={selectedIndicator}
+            onChange={e => setSelectedIndicator(e.target.value as IndicatorKey)}
+            style={{
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-btn)', padding: '7px 12px', fontSize: 13,
+              color: 'var(--text-primary)', cursor: 'pointer',
+            }}
+          >
+            {(kpi?.indicators ?? []).map(i => (
+              <option key={i.key} value={i.key}>{lang === 'en' ? i.label_en : i.label_bm}</option>
+            ))}
+            {!kpi?.indicators.length && (
+              <option value="stunting">{t('Stunting', 'Kelaparan')}</option>
+            )}
+          </select>
+        </div>
 
         {kpiLoading && (
           <div style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 16 }}>
@@ -230,12 +363,12 @@ export function GeoPage() {
           </div>
         )}
 
-        {/* Choropleth + KPI aggregate cards */}
-        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 24 }}>
+        {/* Choropleth + KPI aggregate cards — map takes 60%, taller for breathing room */}
+        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap' }}>
           <div style={{
-            flex: '0 0 40%', background: 'var(--surface-2)',
+            flex: '1 1 540px', minWidth: 360, background: 'var(--surface-2)',
             border: '0.5px solid var(--border)', borderRadius: 12,
-            overflow: 'hidden', boxSizing: 'border-box',
+            padding: 12, boxSizing: 'border-box',
           }}>
             {districts.length === 0
               ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
@@ -243,20 +376,20 @@ export function GeoPage() {
                 </div>
               : <ChoroplethMap districts={districts} />}
           </div>
-          <div style={{ flex: '0 0 60%', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ flex: '1 1 320px', minWidth: 280, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
-              {t('National Average', 'Purata Nasional')}{districts.length > 0 ? ` (${districts.length} ${t('districts', 'daerah')})` : ''}
+              {t('National Average', 'Purata Nasional')}{districts.length > 0 ? ` (${districts.length} ${t('states', 'negeri')})` : ''}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <KpiCard label={t('Stunting', 'Kelaparan')}             value={agg.stunting}    rag={agg.stuntingRag} />
-              <KpiCard label={t('Wasting', 'Kurus')}                  value={agg.wasting}     rag={agg.wastingRag} />
-              <KpiCard label={t('Underweight', 'Kekurangan Berat')}   value={agg.underweight} rag={agg.underweightRag} />
-              <KpiCard label={t('Overweight', 'Berlebihan Berat')}    value={agg.overweight}  rag={agg.overweightRag} />
+              <KpiCard label={t('Stunting', 'Kelaparan')}             value={agg.stunting}    status={ragToStatus(agg.stuntingRag)} />
+              <KpiCard label={t('Wasting', 'Kurus')}                  value={agg.wasting}     status={ragToStatus(agg.wastingRag)} />
+              <KpiCard label={t('Underweight', 'Kekurangan Berat')}   value={agg.underweight} status={ragToStatus(agg.underweightRag)} />
+              <KpiCard label={t('Overweight', 'Berlebihan Berat')}    value={agg.overweight}  status={ragToStatus(agg.overweightRag)} />
             </div>
           </div>
         </div>
 
-        {/* Indicators vs NPAN target bar chart */}
+        {/* Indicators vs NPAN target — themed tooltip + status colors */}
         {kpi && kpi.indicators.length > 0 && (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)', marginTop: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
@@ -265,13 +398,14 @@ export function GeoPage() {
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={kpi.indicators.map(i => ({
                 name: lang === 'en' ? i.label_en : i.label_bm,
-                actual: i.actual, target: i.npan_target, rag: i.rag,
-              }))}>
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} unit="%" />
-                <Tooltip formatter={(v: number, name: string) => [`${Number(v).toFixed(1)}%`, name]} />
+                actual: i.actual, target: i.npan_target,
+                status: ragToStatus(i.rag),
+              }))} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} unit="%" />
+                <Tooltip content={<ChartTooltip valueFormatter={v => typeof v === 'number' ? `${v.toFixed(1)}%` : String(v)} />} cursor={{ fill: 'var(--surface-2)' }} />
                 <Bar dataKey="actual" name={t('Actual', 'Sebenar')}>
-                  {kpi.indicators.map((i, idx) => <Cell key={idx} fill={ragFill(i.rag)} />)}
+                  {kpi.indicators.map((i, idx) => <Cell key={idx} fill={STATUS_VAR[ragToStatus(i.rag)]} />)}
                 </Bar>
                 <Bar dataKey="target" name={t('Target', 'Sasaran')} fill="var(--text-muted)" />
               </BarChart>
@@ -279,35 +413,53 @@ export function GeoPage() {
           </div>
         )}
 
-        {/* Breakdown charts: by state / gender / age */}
+        {/* Breakdown charts — filtered by the global indicator selector */}
         {kpi && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 16 }}>
-            <BreakdownChart title={t('By State', 'Mengikut Negeri')}   rows={normalizeBreakdown(kpi.by_state, 'state')} />
-            <BreakdownChart title={t('By Gender', 'Mengikut Jantina')} rows={normalizeBreakdown(kpi.by_gender, 'gender')} />
-            <BreakdownChart title={t('By Age', 'Mengikut Umur')}       rows={normalizeBreakdown(kpi.by_age, 'group')} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 16 }}>
+            <BreakdownChart title={`${t('By State', 'Mengikut Negeri')} — ${indLabel}`}   rows={kpi.by_state}  groupKey="state"  indicator={selectedIndicator} />
+            <BreakdownChart title={`${t('By Gender', 'Mengikut Jantina')} — ${indLabel}`} rows={kpi.by_gender} groupKey="gender" indicator={selectedIndicator} />
+            <BreakdownChart title={`${t('By Age', 'Mengikut Umur')} — ${indLabel}`}       rows={kpi.by_age}    groupKey="group"  indicator={selectedIndicator} />
           </div>
         )}
 
         {/* Predictive risk scoring card (on-demand) */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)', marginTop: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: risk ? 16 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: risk ? 16 : 0 }}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{t('Predictive Risk Scoring', 'Pemarkahan Risiko Ramalan')}</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                 {t('Composite child-level malnutrition risk (0-100)', 'Risiko malnutrisi peringkat kanak-kanak (0-100)')}
               </div>
             </div>
-            {risk === null && (
-              <button onClick={runRisk} disabled={riskLoading}
-                style={{ background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)', padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: riskLoading ? 0.6 : 1 }}>
-                {riskLoading ? t('Scoring…', 'Memarkah…') : t('Run Risk Scoring', 'Jalankan Pemarkahan')}
-              </button>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {risk && (
+                <select
+                  value={riskTier}
+                  onChange={e => setRiskTier(e.target.value as RiskTierFilter)}
+                  style={{
+                    background: 'var(--surface-2)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-btn)', padding: '6px 10px', fontSize: 12,
+                    color: 'var(--text-primary)', cursor: 'pointer',
+                  }}
+                >
+                  <option value="all">{t('All tiers', 'Semua tahap')}</option>
+                  <option value="high">{t('High risk only', 'Risiko tinggi sahaja')}</option>
+                  <option value="medium">{t('Medium only', 'Sederhana sahaja')}</option>
+                  <option value="low">{t('Low only', 'Rendah sahaja')}</option>
+                </select>
+              )}
+              {risk === null && (
+                <button onClick={runRisk} disabled={riskLoading}
+                  style={{ background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)', padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: riskLoading ? 0.6 : 1 }}>
+                  {riskLoading ? t('Scoring…', 'Memarkah…') : t('Run Risk Scoring', 'Jalankan Pemarkahan')}
+                </button>
+              )}
+            </div>
           </div>
 
           {risk && (
             <>
-              <div style={{ display: 'flex', gap: 24, marginBottom: 16, fontSize: 13 }}>
+              <div style={{ display: 'flex', gap: 24, marginBottom: 16, fontSize: 13, flexWrap: 'wrap' }}>
                 {([
                   [t('Records', 'Rekod'), risk.total_records],
                   [t('Avg risk', 'Risiko purata'), risk.avg_risk_score],
@@ -320,12 +472,14 @@ export function GeoPage() {
                 ))}
               </div>
 
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={Object.entries(risk.distribution).map(([tier, count]) => ({ tier, count }))}>
-                  <XAxis dataKey="tier" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="var(--kkm-blue)" />
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={filteredDistribution} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                  <XAxis dataKey="tier" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} allowDecimals={false} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
+                  <Bar dataKey="count">
+                    {filteredDistribution.map((d, i) => <Cell key={i} fill={STATUS_VAR[d.status]} />)}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
 
@@ -349,7 +503,7 @@ export function GeoPage() {
                 </table>
               )}
 
-              {risk.high_risk_sample.length > 0 && (
+              {filteredSample.length > 0 && (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 16 }}>
                   <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {[t('IC', 'IC'), t('Name', 'Nama'), t('Score', 'Skor'), t('Tier', 'Tahap')].map(h => (
@@ -357,20 +511,58 @@ export function GeoPage() {
                     ))}
                   </tr></thead>
                   <tbody>
-                    {risk.high_risk_sample.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{r.IC_NO_PASSPORT ?? '—'}</td>
-                        <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{r.NAMA ?? '—'}</td>
-                        <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{r.risk_score}</td>
-                        <td style={{ padding: '8px 10px', color: 'var(--danger)', fontWeight: 600 }}>{r.risk_tier}</td>
-                      </tr>
-                    ))}
+                    {filteredSample.map((r, i) => {
+                      const st = tierToStatus(String(r.risk_tier));
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{r.IC_NO_PASSPORT ?? '—'}</td>
+                          <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{r.NAMA ?? '—'}</td>
+                          <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{r.risk_score}</td>
+                          <td style={{ padding: '8px 10px', color: STATUS_VAR[st], fontWeight: 600 }}>{r.risk_tier}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
             </>
           )}
         </div>
+
+        {/* Data distributions — 6 recommended charts driven by /charts/blocks */}
+        {(blocks || blocksLoading) && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {t('Data Distributions', 'Taburan Data')}
+              </div>
+              {blocks && (
+                <button
+                  onClick={() => setShowAllDist(s => !s)}
+                  style={{ background: 'none', border: 'none', color: 'var(--kkm-sky)', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                >
+                  {showAllDist ? t('Show recommended only', 'Tunjuk yang disyorkan sahaja') : t('Show all', 'Tunjuk semua')}
+                </button>
+              )}
+            </div>
+            {blocksLoading ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{t('Loading distributions…', 'Memuatkan taburan…')}</div>
+            ) : blocks ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+                {/* Recommended 5 histograms + 1 scatter, expandable to all available blocks. */}
+                {(showAllDist
+                  ? Object.keys(blocks)
+                  : [...DISTRIBUTION_KEYS.filter(k => k in blocks), ...(SCATTER_KEY in blocks ? [SCATTER_KEY] : [])]
+                ).map(key => {
+                  const b = blocks[key];
+                  if (!b) return null;
+                  if ('points' in b) return <ScatterPanel key={key} block={b} />;
+                  return <HistogramPanel key={key} block={b} />;
+                })}
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
     </SessionGuard>
   );

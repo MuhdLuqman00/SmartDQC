@@ -148,21 +148,23 @@ function GroupBars({ title, rows, labelKey, indicator, notAvail, lang }: {
 const ragToLower = (r?: Rag): 'green' | 'amber' | 'red' =>
   r === 'Amber' ? 'amber' : r === 'Red' ? 'red' : 'green';
 
-/* Shared RAG palette — kept in sync with ChoroplethMap so list bars
-   and the map read the same. `track` is the same hue at low alpha so a
-   0%-rate "green/good" row is still visibly green even with no fill. */
-const RAG_HEX: Record<'green' | 'amber' | 'red', string> = {
-  green: '#00b5a5', amber: '#e0a13c', red: '#d9534f',
+/* Status palette — migrated to KKM Navy-Gold-Brick. Tokens live in
+   tokens.css (--status-good / --status-watch / --status-critical) and
+   stay in sync with ChoroplethMap. The track variants are slightly
+   tinted backgrounds for the bar's empty portion so a 0%-rate "good"
+   row still reads as a positive signal even with no fill on top. */
+const RAG_VAR: Record<'green' | 'amber' | 'red', string> = {
+  green: 'var(--status-good)',
+  amber: 'var(--status-watch)',
+  red:   'var(--status-critical)',
 };
-const ragSolid = (r?: Rag): string => RAG_HEX[ragToLower(r)];
-/* Track tint per RAG (8-digit hex incl. alpha). Green uses a brighter
-   hue at higher opacity so a 0%-rate "good" row — where the track is
-   the whole signal (no fill on top) — reads as clearly bright green.
-   Amber/red stay ~40% since they sit behind a solid fill. */
-const RAG_TRACK_HEX: Record<'green' | 'amber' | 'red', string> = {
-  green: '#2fe3c2cc', amber: '#e0a13c66', red: '#d9534f66',
+const RAG_TRACK_VAR: Record<'green' | 'amber' | 'red', string> = {
+  green: 'var(--status-good-bg)',
+  amber: 'var(--status-watch-bg)',
+  red:   'var(--status-critical-bg)',
 };
-const ragTrack = (r?: Rag): string => RAG_TRACK_HEX[ragToLower(r)];
+const ragSolid = (r?: Rag): string => RAG_VAR[ragToLower(r)];
+const ragTrack = (r?: Rag): string => RAG_TRACK_VAR[ragToLower(r)];
 
 /* Backend returns data-driven gender values and BM-hardcoded age buckets.
    Normalise then translate so labels follow the chosen UI language. */

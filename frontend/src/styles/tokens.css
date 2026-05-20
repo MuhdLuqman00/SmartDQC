@@ -1,57 +1,149 @@
-/* ── KKM Design Tokens ─────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════
+   SmartDQC — KKM Navy Design Tokens
+   Canonical palette per Docs/SmartDQC_UI_Spec.md §1 (KKM Navy).
+   Legacy variable names are preserved so every existing page re-skins to
+   spec with zero markup changes; new tokens add elevation, gradients,
+   spacing and motion for a premium ministerial feel.
+   ──────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Brand */
-  --kkm-deep:  #002D62;
-  --kkm-blue:  #0072BC;
-  --kkm-sky:   #00A3E0;
-  --kkm-teal:  #009B8D;
+  /* ── Brand · KKM Navy (spec canonical) ───────────────────────────────── */
+  --primary:        #1B2A4A;   /* header, sidebar, primary CTAs            */
+  --primary-dark:   #0F1B2F;   /* hover / active                          */
+  --primary-light:  #2E4A7A;   /* secondary buttons, badges, accents      */
+  --accent:         #C8962E;   /* gold — highlights, warning badges        */
+  --accent-soft:    #E8C77A;
 
-  /* Surfaces */
-  --bg:        #F2F6FB;
-  --surface:   #FFFFFF;
-  --surface-2: #F7FAFD;
-  --border:    #D0DCF0;
+  /* Legacy aliases (consumed across all pages — DO NOT rename) */
+  --kkm-deep:  #0F1B2F;        /* sidebar / login brand panel             */
+  --kkm-blue:  #1B2A4A;        /* primary action color                     */
+  --kkm-sky:   #2E4A7A;        /* active state / focus accent              */
+  --kkm-teal:  #2D7D46;        /* positive / success accent                */
+  --navy:      #1B2A4A;        /* GeoPage KpiCard value color              */
 
-  /* Text */
-  --text-primary:   #0D1B2A;
-  --text-secondary: #4A6080;
-  --text-muted:     #8AAABF;
+  /* ── Surfaces ────────────────────────────────────────────────────────── */
+  --bg:        #EEF2F8;        /* page background (spec surface)            */
+  --surface:   #FFFFFF;        /* card background  (spec surface-card)      */
+  --surface-2: #F1F4FA;        /* inset / track / zebra                     */
+  --surface-3: #E7ECF5;
+  --border:    #D8DFEC;        /* hairline navy-grey                       */
+  --border-strong: #BCC7DA;
 
-  /* Status */
-  --success:    #009B8D;
-  --warning:    #D97706;
+  /* ── Text ────────────────────────────────────────────────────────────── */
+  --text-primary:   #1A1A2E;
+  --text-secondary: #4A5568;
+  --text-muted:     #8A94A6;
+  --text-on-navy:   #F4F7FC;
+
+  /* ── Status ──────────────────────────────────────────────────────────── */
+  --success:    #2D7D46;
+  --warning:    #C8962E;
   --danger:     #C0392B;
-  --success-bg: #E6F7F5;
-  --warning-bg: #FEF3C7;
-  --danger-bg:  #FDECEA;
+  --info:       #2E4A7A;
+  --success-bg: #E8F3EC;
+  --warning-bg: #FBF1DD;
+  --danger-bg:  #FBEAE8;
+  --info-bg:    #E9EEF7;
 
-  /* Geometry */
-  --radius-card: 10px;
-  --radius-btn:  6px;
-  --shadow-card: 0 1px 4px rgba(0,0,0,0.06);
-  --transition:  150ms ease;
+  /* ── Data viz status palette (KKM Navy-Gold-Brick) ───────────────────────
+     Replaces the generic RAG (#00b5a5/#e0a13c/#d9534f) on charts, maps and
+     bar fills with a navy-aligned set that matches the sidebar gold accent.
+     Use these for any "good / watch / critical" indicator-driven colour. */
+  --status-good:     #2D9BC9;  /* KKM Sky                                  */
+  --status-watch:    #C8962E;  /* KKM Gold (= --accent)                    */
+  --status-critical: #B83A2E;  /* Brick — slightly muted than --danger     */
+  --status-neutral:  #8A94A6;  /* unmatched / no-data tone                 */
+  --status-good-bg:     #E5F2F8;
+  --status-watch-bg:    #FBF1DD;
+  --status-critical-bg: #F8E6E3;
+
+  /* ── Gradients & glow ────────────────────────────────────────────────── */
+  --gradient-navy:  linear-gradient(160deg, #1B2A4A 0%, #0F1B2F 100%);
+  --gradient-brand: linear-gradient(135deg, #2E4A7A 0%, #1B2A4A 60%, #0F1B2F 100%);
+  --gradient-gold:  linear-gradient(135deg, #E8C77A 0%, #C8962E 100%);
+  --gradient-sheen: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.10) 50%, transparent 100%);
+  --glow-accent:    0 0 0 3px rgba(46,74,122,0.18);
+
+  /* ── Geometry ────────────────────────────────────────────────────────── */
+  --radius-card: 14px;
+  --radius-btn:  9px;
+  --radius-pill: 999px;
+  --radius-sm:   6px;
+
+  /* ── Elevation (navy-tinted, layered) ────────────────────────────────── */
+  --shadow-sm:   0 1px 2px rgba(15,27,47,0.06);
+  --shadow-card: 0 1px 3px rgba(15,27,47,0.06), 0 6px 18px rgba(15,27,47,0.05);
+  --shadow-md:   0 4px 12px rgba(15,27,47,0.10), 0 12px 32px rgba(15,27,47,0.07);
+  --shadow-lg:   0 12px 36px rgba(15,27,47,0.16), 0 24px 64px rgba(15,27,47,0.12);
+  --shadow-inset: inset 0 1px 0 rgba(255,255,255,0.5);
+
+  /* ── Spacing scale (4/8 rhythm) ──────────────────────────────────────── */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
+
+  /* ── Motion ──────────────────────────────────────────────────────────── */
+  --transition:    160ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-lg: 280ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Z-index scale ───────────────────────────────────────────────────── */
+  --z-base: 0; --z-sticky: 20; --z-nav: 40; --z-overlay: 100; --z-modal: 1000;
+
+  color-scheme: light;
 }
 
 [data-theme="dark"] {
-  --kkm-deep:  #001A3A;
-  --kkm-blue:  #1A8CD8;
-  --kkm-sky:   #33B8E8;
-  --kkm-teal:  #00B5A5;
+  --primary:        #2E4A7A;
+  --primary-dark:   #0B1424;
+  --primary-light:  #4A6BA0;
+  --accent:         #E0B458;
+  --accent-soft:    #F0D596;
 
-  --bg:        #0D1B2A;
-  --surface:   #162232;
-  --surface-2: #1E2F42;
-  --border:    #243548;
+  --kkm-deep:  #0B1424;
+  --kkm-blue:  #3B5B92;
+  --kkm-sky:   #6E8FC4;
+  --kkm-teal:  #38A169;
+  --navy:      #C7D4EC;
 
-  --text-primary:   #E8EDF4;
-  --text-secondary: #7A96B0;
-  --text-muted:     #4A6278;
+  --bg:        #0B1424;
+  --surface:   #14203A;
+  --surface-2: #1B2942;
+  --surface-3: #233351;
+  --border:    #2A3A57;
+  --border-strong: #3A4F73;
 
-  --success:    #00B5A5;
-  --warning:    #F59E0B;
-  --danger:     #E05A4E;
-  --success-bg: #052E2A;
-  --warning-bg: #1C1400;
-  --danger-bg:  #2A0A08;
+  --text-primary:   #EAEFF8;
+  --text-secondary: #A9B6CC;
+  --text-muted:     #6B7C99;
+  --text-on-navy:   #EAEFF8;
+
+  --success:    #38A169;
+  --warning:    #E0B458;
+  --danger:     #E06A5C;
+  --info:       #6E8FC4;
+  --success-bg: #0E2A1C;
+  --warning-bg: #2E2410;
+  --danger-bg:  #331412;
+  --info-bg:    #16243E;
+
+  /* Data viz status palette — dark-mode variants slightly desaturated */
+  --status-good:     #4DB5DD;
+  --status-watch:    #E0B458;
+  --status-critical: #D45449;
+  --status-neutral:  #6B7C99;
+  --status-good-bg:     #112B36;
+  --status-watch-bg:    #2E2410;
+  --status-critical-bg: #2E1714;
+
+  --gradient-navy:  linear-gradient(160deg, #1B2942 0%, #0B1424 100%);
+  --gradient-brand: linear-gradient(135deg, #2E4A7A 0%, #14203A 60%, #0B1424 100%);
+  --gradient-sheen: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+  --glow-accent:    0 0 0 3px rgba(110,143,196,0.25);
+
+  --shadow-sm:   0 1px 2px rgba(0,0,0,0.4);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 6px 18px rgba(0,0,0,0.30);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.45), 0 12px 32px rgba(0,0,0,0.35);
+  --shadow-lg:   0 12px 36px rgba(0,0,0,0.55), 0 24px 64px rgba(0,0,0,0.45);
+  --shadow-inset: inset 0 1px 0 rgba(255,255,255,0.04);
+
+  color-scheme: dark;
 }

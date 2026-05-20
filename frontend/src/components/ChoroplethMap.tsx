@@ -23,10 +23,13 @@ export interface Aggregates {
   overweightRag: 'green' | 'amber' | 'red';
 }
 
+/* Status palette migrated from the old generic RAG (#00b5a5/#e0a13c/#d9534f)
+   to the KKM Navy-Gold-Brick set: --status-good (sky), --status-watch (gold),
+   --status-critical (brick). Tokens defined in tokens.css. */
 export function ragToColor(rag: 'green' | 'amber' | 'red' | undefined): string {
-  if (rag === 'green') return '#00b5a5';
-  if (rag === 'amber') return '#e0a13c';
-  if (rag === 'red')   return '#d9534f';
+  if (rag === 'green') return 'var(--status-good)';
+  if (rag === 'amber') return 'var(--status-watch)';
+  if (rag === 'red')   return 'var(--status-critical)';
   return 'var(--surface-2)';
 }
 
@@ -168,9 +171,9 @@ export function ChoroplethMap({ districts, selectedDistrict, onDistrictClick }: 
         fontSize: 11, color: 'var(--text-secondary)',
       }}>
         {([
-          ['#00b5a5', t('Good', 'Baik')],
-          ['#e0a13c', t('Moderate', 'Sederhana')],
-          ['#d9534f', t('Critical', 'Kritikal')],
+          ['var(--status-good)', t('Good', 'Baik')],
+          ['var(--status-watch)', t('Moderate', 'Sederhana')],
+          ['var(--status-critical)', t('Critical', 'Kritikal')],
           ['var(--surface-2)', t('No data', 'Tiada data')],
         ] as const).map(([c, label]) => (
           <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
