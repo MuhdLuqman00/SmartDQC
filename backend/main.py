@@ -3474,11 +3474,66 @@ async def datasets_delete(req: DatasetDeleteRequest):
 
 # ── Entity Resolution ────────────────────────────────────────────────────────
 
-from backend.ml.entity import link_records, persist_linkage
+from backend.ml.entity import link_records, link_records_v2, persist_linkage
 
 
 class EntityLinkRequest(BaseModel):
     dataset_ids: list[str]
+
+
+class EntityLinkV2Request(BaseModel):
+    dataset_ids: list[str]
+    fuzzy_ic: bool = True
+    fuzzy_ic_max_distance: int = 1
+    name_dob_boost: bool = True
+    min_confidence: float = 0.0       # 0.0 = include unmatched singles
+    max_groups: int = 500             # cap response size — UI paginates
+
+
+_IC_COL_CANDIDATES   = ("IC_NO_PASSPORT", "IC", "NRIC", "MyKID", "ic_no", "no_kp", "no_ic")
+_NAME_COL_CANDIDATES = ("NAMA", "name", "NAMA_PESERTA", "FULL_NAME", "nama_kanak_kanak")
+_DOB_COL_CANDIDATES  = ("Tarikh_Lahir", "DOB", "TARIKH_LAHIR", "dob", "date_of_birth")
+
+
+def _pick_col(df_cols: list[str], candidates: tuple[str, ...]) -> str | None:
+    """Return the first matching column name (case-insensitive) or None."""
+    lower = {c.lower(): c for c in df_cols}
+    for cand in candidates:
+        hit = lower.get(cand.lower())
+        if hit:
+            return hit
+    return None
+
+
+def _records_from_cached(cache_id: str, dataset_id: str, source_type: str) -> list[dict]:
+    """Pull (ic, name, dob) rows out of a cached DataFrame so v2 linkage
+    sees real child-level data instead of one summary row per dataset."""
+    entry = _cache_get(cache_id)
+    if entry is None:
+        return []
+    df = entry["df"]
+    if df is None or df.empty:
+        return []
+    cols = list(df.columns)
+    ic_c   = _pick_col(cols, _IC_COL_CANDIDATES)
+    name_c = _pick_col(cols, _NAME_COL_CANDIDATES)
+    dob_c  = _pick_col(cols, _DOB_COL_CANDIDATES)
+    if ic_c is None:
+        return []
+    out: list[dict] = []
+    for ic_val, name_val, dob_val in zip(
+        df[ic_c].astype(str).tolist(),
+        df[name_c].astype(str).tolist() if name_c else [""] * len(df),
+        df[dob_c].astype(str).tolist() if dob_c else [""] * len(df),
+    ):
+        out.append({
+            "ic": ic_val,
+            "source_type": source_type or "unknown",
+            "dataset_id": dataset_id,
+            "name": "" if name_val.lower() in ("nan", "none") else name_val,
+            "dob":  "" if dob_val.lower()  in ("nan", "none") else dob_val,
+        })
+    return out
 
 
 @app.post("/entity/link")
@@ -3529,6 +3584,118 @@ async def entity_link(req: EntityLinkRequest):
         "rows_written": rows_written,
         "profiles": linked[:50],
     }
+
+
+def _run_v2_linkage(req: EntityLinkV2Request) -> dict:
+    """Shared core for /entity/link/v2 and /entity/link/v2/export.
+
+    Reads actual child-level rows from each dataset's cached DataFrame
+    (not just one summary row like v1), runs fuzzy IC + name/dob boost
+    matching, and returns rich profiles with confidence + reason chips."""
+    from backend.db.models import Dataset
+    from backend.db.init_db import SessionLocal
+
+    if len(req.dataset_ids) < 2:
+        raise HTTPException(400, "Provide at least 2 dataset_ids to link.")
+
+    all_records: list[dict] = []
+    dataset_meta: list[dict] = []
+    with SessionLocal() as db:
+        for ds_id in req.dataset_ids:
+            ds = db.get(Dataset, ds_id)
+            if ds is None:
+                continue
+            recs = _records_from_cached(ds_id, ds_id, ds.source_type or "unknown")
+            dataset_meta.append({
+                "dataset_id":  ds_id,
+                "filename":    ds.filename,
+                "source_type": ds.source_type,
+                "records":     len(recs),
+            })
+            all_records.extend(recs)
+
+    if not all_records:
+        return {
+            "total_groups": 0, "linked_groups": 0, "unlinked": 0,
+            "datasets": dataset_meta, "profiles": [],
+            "warning": "No matchable rows found in the cached datasets — re-run cleaning if the datasets were uploaded a long time ago and may have been evicted from the cache.",
+        }
+
+    groups = link_records_v2(
+        all_records,
+        fuzzy_ic=req.fuzzy_ic,
+        fuzzy_ic_max_distance=req.fuzzy_ic_max_distance,
+        name_dob_boost=req.name_dob_boost,
+        min_confidence=req.min_confidence,
+    )
+
+    # Sort: linked-by-confidence-desc first, unlinked at the bottom.
+    groups.sort(key=lambda g: (-len(g["sources"]), -g["confidence"]))
+
+    linked  = sum(1 for g in groups if len(g["sources"]) > 1)
+    return {
+        "total_groups":  len(groups),
+        "linked_groups": linked,
+        "unlinked":      len(groups) - linked,
+        "datasets":      dataset_meta,
+        "profiles":      groups[: req.max_groups],
+    }
+
+
+@app.post("/entity/link/v2")
+async def entity_link_v2(req: EntityLinkV2Request):
+    """Cross-dataset entity resolution v2 — fuzzy IC + name/dob boost.
+
+    Returns matched child profiles with a 0-1 confidence score and
+    explanation chips (exact_ic / fuzzy_ic±N / name+dob / unmatched).
+    """
+    result = _run_v2_linkage(req)
+    _log_audit(
+        action="entity.link.v2",
+        detail=f"{len(req.dataset_ids)} datasets, {result['linked_groups']} matched",
+    )
+    return result
+
+
+@app.post("/entity/link/v2/export")
+async def entity_link_v2_export(req: EntityLinkV2Request):
+    """Return the v2 linkage result as a CSV download — one row per
+    (group, source) pair so analysts can pivot on confidence and reasons."""
+    result = _run_v2_linkage(req)
+    import csv
+    import io
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "group_ic", "name", "dob", "confidence", "match_reasons",
+        "source_type", "dataset_id", "source_name", "source_dob", "source_ic",
+    ])
+    for g in result["profiles"]:
+        reasons = ";".join(g.get("match_reasons", []))
+        for src in g["sources"]:
+            w.writerow([
+                g.get("ic", ""),
+                g.get("name") or "",
+                g.get("dob") or "",
+                f"{g.get('confidence', 0.0):.2f}",
+                reasons,
+                src.get("source_type", ""),
+                src.get("dataset_id", ""),
+                src.get("name", ""),
+                src.get("dob", ""),
+                src.get("ic", ""),
+            ])
+
+    _log_audit(
+        action="entity.link.v2.export",
+        detail=f"{len(req.dataset_ids)} datasets, {result['linked_groups']} matched, csv",
+    )
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="SmartDQC_Linkage.csv"'},
+    )
 
 
 @app.get("/dashboard/summary")

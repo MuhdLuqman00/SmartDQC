@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Upload, Table2, ShieldCheck, Sparkles, BarChart3,
   BookOpen, Clock, Settings, ClipboardList, ChevronRight, ChevronLeft,
-  MapPin, Brush, LayoutGrid,
+  MapPin, Brush, LayoutGrid, Link2,
 } from 'lucide-react';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
@@ -30,6 +30,9 @@ const GROUPS: Group[] = [
       { path: '/quality',  en: 'Quality Report', bm: 'Laporan Kualiti', icon: <ShieldCheck size={18} /> },
       { path: '/cleaning', en: 'Cleaning',       bm: 'Pembersihan',    icon: <Brush size={18} /> },
       { path: '/geo',      en: 'Geo & Risk',     bm: 'Geo & Risiko',   icon: <MapPin size={18} /> },
+      // Cross-dataset linkage — admin-only because it can surface PII
+      // (full IC + name + DOB) across previously-isolated datasets.
+      { path: '/linkage',  en: 'Linkage',        bm: 'Pemautan',       icon: <Link2 size={18} />,   adminOnly: true },
     ],
   },
   {
@@ -57,7 +60,7 @@ const GROUPS: Group[] = [
   },
 ];
 
-const NO_CACHE_PAGES = ['/upload', '/datasets', '/history', '/settings', '/audit', '/features'];
+const NO_CACHE_PAGES = ['/upload', '/datasets', '/linkage', '/history', '/settings', '/audit', '/features'];
 
 interface Props { role?: string; collapsed: boolean; onToggle: () => void; }
 

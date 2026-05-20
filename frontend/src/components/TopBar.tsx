@@ -17,6 +17,7 @@ const PAGE_TITLES: Record<string, { en: string; bm: string }> = {
   '/ai':       { en: 'AI Assistant',    bm: 'Pembantu AI'     },
   '/reports':  { en: 'Reports',         bm: 'Laporan'         },
   '/datasets': { en: 'Dataset Library', bm: 'Perpustakaan'    },
+  '/linkage':  { en: 'Linkage',         bm: 'Pemautan'        },
   '/history':  { en: 'History',         bm: 'Sejarah'         },
   '/settings': { en: 'Settings',        bm: 'Tetapan'         },
   '/audit':    { en: 'Audit Log',       bm: 'Log Audit'       },

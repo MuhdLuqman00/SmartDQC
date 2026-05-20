@@ -16,6 +16,7 @@ import { HistoryPage }        from './pages/HistoryPage';
 import { SettingsPage }       from './pages/SettingsPage';
 import { AuditPage }          from './pages/AuditPage';
 import { GeoPage }            from './pages/GeoPage';
+import { LinkagePage }        from './pages/LinkagePage';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isInitializing } = useAuth();
@@ -42,6 +43,7 @@ export function App(): JSX.Element {
           <Route path="/geo"      element={<GeoPage />} />
           <Route path="/reports"  element={<ReportsPage />} />
           <Route path="/datasets" element={<DatasetLibraryPage />} />
+          <Route path="/linkage"  element={<LinkagePage />} />
           <Route path="/history"  element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/audit"    element={<AuditPage />} />
