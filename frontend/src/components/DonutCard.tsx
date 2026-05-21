@@ -92,7 +92,7 @@ export function DonutCard({ title, data, colorFor, innerRadiusPct = 0.55 }: Prop
 
   if (!data || data.length === 0) {
     return (
-      <div style={{
+      <div className="card-hover" style={{
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)',
       }}>
@@ -103,7 +103,7 @@ export function DonutCard({ title, data, colorFor, innerRadiusPct = 0.55 }: Prop
   }
 
   return (
-    <div style={{
+    <div className="card-hover" style={{
       background: 'var(--surface)', border: '1px solid var(--border)',
       borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)',
       position: 'relative',

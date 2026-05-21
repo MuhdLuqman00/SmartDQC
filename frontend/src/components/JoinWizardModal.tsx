@@ -181,10 +181,11 @@ export function JoinWizardModal({ left, right, onClose, onJoined }: Props): JSX.
 
   return (
     <div
+      className="modal-backdrop"
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={onClose}
     >
-      <div style={cardBg} onClick={e => e.stopPropagation()}>
+      <div className="modal-card" style={cardBg} onClick={e => e.stopPropagation()}>
         {/* ── Header ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
           <GitMerge size={20} style={{ color: 'var(--kkm-blue)' }} />

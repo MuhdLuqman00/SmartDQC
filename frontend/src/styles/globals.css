@@ -1,35 +1,173 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import './tokens.css';
 
+/* ── Reset ──────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body, #root { height: 100%; }
+
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
   background: var(--bg);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
+  line-height: 1.55;
+  letter-spacing: -0.006em;
+  transition: background var(--transition-lg), color var(--transition-lg);
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Plus Jakarta Sans', sans-serif;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
 code, pre, .mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
 }
+
+/* Tabular figures for data so columns/KPIs don't shift width */
+table, .tabular, [data-tabular] { font-variant-numeric: tabular-nums; }
 
 a { color: inherit; text-decoration: none; }
 button { cursor: pointer; font-family: inherit; }
+/* Universal tactile press — composes with per-button hover transforms.
+   Skip when reduced-motion is on (handled by the global override below). */
+button:not(:disabled):active { transform: translateY(1px); }
+button:disabled { cursor: not-allowed; }
 input, select, textarea { font-family: inherit; }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); background-clip: padding-box; }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 
+/* ── Focus (accessible, on-brand) ───────────────────────────────────────── */
 *:focus-visible {
-  outline: 2px solid var(--kkm-sky);
+  outline: 2px solid var(--primary-light);
   outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection { background: rgba(46,74,122,0.22); color: var(--text-primary); }
+
+/* ── Motion library ─────────────────────────────────────────────────────── */
+@keyframes spin   { to { transform: rotate(360deg); } }
+@keyframes pulse  { 0%,100% { opacity: .3; transform: scale(.8);} 50% { opacity: 1; transform: scale(1);} }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(16px);} to { opacity: 1; transform: translateY(0);} }
+@keyframes shimmer { 0% { background-position: -480px 0;} 100% { background-position: 480px 0;} }
+@keyframes glowPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(46,74,122,0.0); }
+  50%     { box-shadow: 0 0 0 6px rgba(46,74,122,0.08); }
+}
+@keyframes tooltipSlideIn {
+  from { opacity: 0; transform: translate(-4px, -50%); }
+  to   { opacity: 1; transform: translate(0,    -50%); }
+}
+@keyframes modalPop  { from { opacity: 0; transform: scale(0.96) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes backdropFade { from { opacity: 0; } to { opacity: 1; } }
+
+.spin { animation: spin 0.9s linear infinite; }
+
+/* Staggered page-content entrance */
+.page-enter { animation: fadeUp 0.4s cubic-bezier(0.4,0,0.2,1) both; }
+.page-enter > * { animation: fadeIn 0.45s cubic-bezier(0.4,0,0.2,1) both; }
+.page-enter > *:nth-child(1) { animation-delay: .02s; }
+.page-enter > *:nth-child(2) { animation-delay: .07s; }
+.page-enter > *:nth-child(3) { animation-delay: .12s; }
+.page-enter > *:nth-child(4) { animation-delay: .17s; }
+.page-enter > *:nth-child(5) { animation-delay: .22s; }
+.page-enter > *:nth-child(6) { animation-delay: .27s; }
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 37%, var(--surface-2) 63%);
+  background-size: 960px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Reusable surface utilities ─────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+.card-hover { transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition); }
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md) !important;
+  border-color: var(--border-strong) !important;
+}
+
+/* Icon micro-lift (sidebar nav, topbar icon buttons) — pairs with `transition: transform var(--transition)`. */
+.icon-pop { transition: transform var(--transition); }
+.icon-pop-host:hover .icon-pop { transform: translateX(2px) scale(1.08); }
+
+/* Collapsed-sidebar tooltip chip. Parent must be position:relative. */
+.tooltip-chip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translate(-4px, -50%);
+  opacity: 0;
+  pointer-events: none;
+  background: var(--primary-dark);
+  color: var(--text-on-navy);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-left: 2px solid var(--accent);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.28);
+  transition: opacity var(--transition), transform var(--transition);
+  z-index: 60;
+}
+.tooltip-host:hover > .tooltip-chip { animation: tooltipSlideIn 140ms cubic-bezier(0.4,0,0.2,1) forwards; }
+
+/* Modal entrance */
+.modal-backdrop { animation: backdropFade 160ms ease-out both; }
+.modal-card     { animation: modalPop 200ms cubic-bezier(0.4,0,0.2,1) both; }
+
+.glass {
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+}
+
+/* Primary button rhythm (opt-in helper) */
+.btn-primary {
+  background: var(--gradient-brand);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-btn);
+  font-weight: 600;
+  transition: filter var(--transition), transform var(--transition), box-shadow var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: var(--shadow-md); }
+.btn-primary:active:not(:disabled) { transform: translateY(1px); }
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

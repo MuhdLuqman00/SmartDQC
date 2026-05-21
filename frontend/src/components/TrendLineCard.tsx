@@ -49,7 +49,7 @@ export function TrendLineCard({ title, data, series = DEFAULT_SERIES, lang }: Pr
 
   if (!rows.length || !activeSeries.length) {
     return (
-      <div style={{
+      <div className="card-hover" style={{
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)',
       }}>
@@ -60,7 +60,7 @@ export function TrendLineCard({ title, data, series = DEFAULT_SERIES, lang }: Pr
   }
 
   return (
-    <div style={{
+    <div className="card-hover" style={{
       background: 'var(--surface)', border: '1px solid var(--border)',
       borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)',
     }}>

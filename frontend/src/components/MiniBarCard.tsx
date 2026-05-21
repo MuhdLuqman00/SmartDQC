@@ -35,7 +35,7 @@ export function MiniBarCard({ title, data, labelKey, maxBars = 12 }: Props): JSX
 
   if (!rows.length) {
     return (
-      <div style={{
+      <div className="card-hover" style={{
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)',
       }}>
@@ -46,7 +46,7 @@ export function MiniBarCard({ title, data, labelKey, maxBars = 12 }: Props): JSX
   }
 
   return (
-    <div style={{
+    <div className="card-hover" style={{
       background: 'var(--surface)', border: '1px solid var(--border)',
       borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)',
     }}>

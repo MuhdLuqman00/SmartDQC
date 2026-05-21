@@ -36,7 +36,8 @@ export function TopBar() {
   const iconBtn: React.CSSProperties = {
     background: 'var(--surface-2)', border: '1px solid var(--border)',
     borderRadius: 9, padding: 8, color: 'var(--text-secondary)',
-    display: 'flex', alignItems: 'center', transition: 'all var(--transition)',
+    display: 'flex', alignItems: 'center',
+    transition: 'transform var(--transition), color var(--transition), border-color var(--transition), background var(--transition)',
   };
 
   return (
@@ -110,8 +111,8 @@ export function TopBar() {
         onClick={toggleTheme}
         title={theme === 'dark' ? t('Light mode', 'Mod terang') : t('Dark mode', 'Mod gelap')}
         style={iconBtn}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary-light)'; e.currentTarget.style.color = 'var(--primary-light)'; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary-light)'; e.currentTarget.style.color = 'var(--primary-light)'; e.currentTarget.style.transform = 'scale(1.08)'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.transform = 'scale(1)'; }}
       >
         {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
       </button>
@@ -149,8 +150,8 @@ export function TopBar() {
         onClick={logout}
         title={t('Logout', 'Log Keluar')}
         style={iconBtn}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--danger)'; e.currentTarget.style.color = 'var(--danger)'; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--danger)'; e.currentTarget.style.color = 'var(--danger)'; e.currentTarget.style.transform = 'scale(1.08)'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.transform = 'scale(1)'; }}
       >
         <LogOut size={15} />
       </button>

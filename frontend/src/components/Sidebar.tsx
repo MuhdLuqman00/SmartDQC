@@ -136,11 +136,12 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
               {visible.map(item => {
                 const active = isActive(item.path);
                 const hov = hovered === item.path;
+                const label = lang === 'en' ? item.en : item.bm;
                 return (
                   <Link
                     key={item.path}
                     to={buildLink(item.path)}
-                    title={collapsed ? (lang === 'en' ? item.en : item.bm) : undefined}
+                    className={`icon-pop-host ${collapsed ? 'tooltip-host' : ''}`}
                     onMouseEnter={() => setHovered(item.path)}
                     onMouseLeave={() => setHovered(null)}
                     style={{
@@ -153,7 +154,8 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
                         ? 'linear-gradient(100deg, rgba(46,74,122,0.55), rgba(46,74,122,0.18))'
                         : hov ? 'rgba(255,255,255,0.06)' : 'transparent',
                       fontSize: 13.5, fontWeight: active ? 600 : 500,
-                      transition: 'all var(--transition)', whiteSpace: 'nowrap',
+                      transition: 'color var(--transition), background var(--transition)',
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     {active && (
@@ -164,8 +166,15 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
                         boxShadow: '0 0 10px rgba(200,150,46,0.6)',
                       }} />
                     )}
-                    <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{item.icon}</span>
-                    {!collapsed && <span>{lang === 'en' ? item.en : item.bm}</span>}
+                    <span className="icon-pop" style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{item.icon}</span>
+                    <span style={{
+                      opacity: collapsed ? 0 : 1,
+                      maxWidth: collapsed ? 0 : 200,
+                      overflow: 'hidden',
+                      transition: 'opacity 180ms ease-out, max-width var(--transition-lg)',
+                      transitionDelay: collapsed ? '0ms' : '80ms',
+                    }}>{label}</span>
+                    {collapsed && <span className="tooltip-chip">{label}</span>}
                   </Link>
                 );
               })}

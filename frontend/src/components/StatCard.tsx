@@ -10,7 +10,7 @@ interface Props {
 
 export function StatCard({ label, value, sub, accent, icon }: Props) {
   return (
-    <div style={{
+    <div className="card-hover" style={{
       background: 'var(--surface)',
       border: '1px solid var(--border)',
       borderTop: accent ? `3px solid ${accent}` : '1px solid var(--border)',
