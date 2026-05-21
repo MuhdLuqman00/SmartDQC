@@ -46,15 +46,15 @@ interface KpiDashboard {
 // ── Risk types ────────────────────────────────────────────────────────────────
 
 interface RiskDistrict { district: string; avg_risk: number; max_risk: number; n_records: number; }
-interface RiskSampleRow { IC_NO_PASSPORT?: string; NAMA?: string; risk_score: number; risk_tier: string; [k: string]: unknown; }
 interface RiskResult {
   total_records: number;
+  scored_records: number;
+  incomplete_count: number;
   flags_used: string[];
   distribution: Record<string, number>;
   avg_risk_score: number;
   high_risk_count: number;
   district_summary: RiskDistrict[] | null;
-  high_risk_sample: RiskSampleRow[];
 }
 
 // ── Chart blocks types ───────────────────────────────────────────────────────
@@ -253,8 +253,6 @@ function ScatterPanel({ title, block }: { title: string; block: ScatterBlock }) 
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-type RiskTierFilter = 'all' | 'high' | 'medium' | 'low';
-
 export function GeoPage() {
   const { cacheId } = useSession();
   const { t, lang } = useLang();
@@ -264,7 +262,6 @@ export function GeoPage() {
 
   const [risk, setRisk] = useState<RiskResult | null>(null);
   const [riskLoading, setRiskLoading] = useState(false);
-  const [riskTier, setRiskTier] = useState<RiskTierFilter>('all');
 
   const [selectedIndicator, setSelectedIndicator] = useState<IndicatorKey>('stunting');
 
@@ -307,31 +304,12 @@ export function GeoPage() {
   const indMeta = kpi?.indicators.find(i => i.key === selectedIndicator);
   const indLabel = indMeta ? (lang === 'en' ? indMeta.label_en : indMeta.label_bm) : '';
 
-  // ── Risk distribution post-filter ─────────────────────────────────────────
-  const filteredDistribution = useMemo(() => {
+  // ── Risk tier distribution for the bar chart ──────────────────────────────
+  const distributionData = useMemo(() => {
     if (!risk) return [] as { tier: string; count: number; status: Status }[];
     return Object.entries(risk.distribution)
-      .filter(([tier]) => {
-        if (riskTier === 'all') return true;
-        const v = tier.toLowerCase();
-        if (riskTier === 'high') return v.includes('high') || v.includes('tinggi');
-        if (riskTier === 'medium') return v.includes('med') || v.includes('sederhana');
-        return v.includes('low') || v.includes('rendah');
-      })
       .map(([tier, count]) => ({ tier, count, status: tierToStatus(tier) }));
-  }, [risk, riskTier]);
-
-  // ── Filtered high-risk sample / district summary ──────────────────────────
-  const filteredSample = useMemo(() => {
-    if (!risk?.high_risk_sample) return [];
-    if (riskTier === 'all') return risk.high_risk_sample;
-    return risk.high_risk_sample.filter(r => {
-      const v = String(r.risk_tier ?? '').toLowerCase();
-      if (riskTier === 'high') return v.includes('high') || v.includes('tinggi');
-      if (riskTier === 'medium') return v.includes('med') || v.includes('sederhana');
-      return v.includes('low') || v.includes('rendah');
-    });
-  }, [risk, riskTier]);
+  }, [risk]);
 
   return (
     <SessionGuard>
@@ -430,28 +408,12 @@ export function GeoPage() {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)', marginTop: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: risk ? 16 : 0 }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{t('Predictive Risk Scoring', 'Pemarkahan Risiko Ramalan')}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{t('Composite Risk Index', 'Indeks Risiko Komposit')}</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                 {t('Composite child-level malnutrition risk (0-100)', 'Risiko malnutrisi peringkat kanak-kanak (0-100)')}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {risk && (
-                <select
-                  value={riskTier}
-                  onChange={e => setRiskTier(e.target.value as RiskTierFilter)}
-                  style={{
-                    background: 'var(--surface-2)', border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-btn)', padding: '6px 10px', fontSize: 12,
-                    color: 'var(--text-primary)', cursor: 'pointer',
-                  }}
-                >
-                  <option value="all">{t('All tiers', 'Semua tahap')}</option>
-                  <option value="high">{t('High risk only', 'Risiko tinggi sahaja')}</option>
-                  <option value="medium">{t('Medium only', 'Sederhana sahaja')}</option>
-                  <option value="low">{t('Low only', 'Rendah sahaja')}</option>
-                </select>
-              )}
               {risk === null && (
                 <button onClick={runRisk} disabled={riskLoading}
                   style={{ background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)', padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: riskLoading ? 0.6 : 1 }}>
@@ -477,12 +439,12 @@ export function GeoPage() {
               </div>
 
               <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={filteredDistribution} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                <BarChart data={distributionData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
                   <XAxis dataKey="tier" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
                   <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} allowDecimals={false} />
                   <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
                   <Bar dataKey="count">
-                    {filteredDistribution.map((d, i) => <Cell key={i} fill={STATUS_VAR[d.status]} />)}
+                    {distributionData.map((d, i) => <Cell key={i} fill={STATUS_VAR[d.status]} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -503,29 +465,6 @@ export function GeoPage() {
                         <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{d.n_records}</td>
                       </tr>
                     ))}
-                  </tbody>
-                </table>
-              )}
-
-              {filteredSample.length > 0 && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 16 }}>
-                  <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {[t('IC', 'IC'), t('Name', 'Nama'), t('Score', 'Skor'), t('Tier', 'Tahap')].map(h => (
-                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{h}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody>
-                    {filteredSample.map((r, i) => {
-                      const st = tierToStatus(String(r.risk_tier));
-                      return (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{r.IC_NO_PASSPORT ?? '—'}</td>
-                          <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{r.NAMA ?? '—'}</td>
-                          <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{r.risk_score}</td>
-                          <td style={{ padding: '8px 10px', color: STATUS_VAR[st], fontWeight: 600 }}>{r.risk_tier}</td>
-                        </tr>
-                      );
-                    })}
                   </tbody>
                 </table>
               )}
