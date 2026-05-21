@@ -37,7 +37,7 @@ interface IndicatorKpi {
   gap: number; rag: Rag;
 }
 interface GroupRow {
-  state?: string; district?: string; gender?: string; group?: string;
+  state?: string; district?: string; gender?: string; group?: string; income?: string;
   n: number;
   rates: Partial<Record<IndicatorKey, number>>;
   status: Partial<Record<IndicatorKey, Rag>>;
@@ -49,6 +49,7 @@ interface KpiResult {
   by_state: GroupRow[];
   by_daerah?: GroupRow[];
   by_gender: GroupRow[];
+  by_income?: GroupRow[];
   by_age: GroupRow[];
 }
 
@@ -112,7 +113,7 @@ function fmt(n: number | string | null | undefined) { return n == null ? '—' :
 function GroupBars({ title, rows, labelKey, indicator, notAvail, lang }: {
   title: string;
   rows: GroupRow[];
-  labelKey: 'gender' | 'group';
+  labelKey: 'gender' | 'group' | 'income';
   indicator: IndicatorKey;
   notAvail: string;
   lang: 'en' | 'bm';
@@ -178,7 +179,7 @@ const ragTrack = (r?: Rag): string => RAG_TRACK_VAR[ragToLower(r)];
 
 /* Backend returns data-driven gender values and BM-hardcoded age buckets.
    Normalise then translate so labels follow the chosen UI language. */
-function formatGroupLabel(labelKey: 'gender' | 'group', raw: string, lang: 'en' | 'bm'): string {
+function formatGroupLabel(labelKey: 'gender' | 'group' | 'income', raw: string, lang: 'en' | 'bm'): string {
   const v = raw.trim().toLowerCase();
   if (labelKey === 'gender') {
     if (['lelaki', 'l', 'male', 'm'].includes(v)) return lang === 'en' ? 'Male' : 'Lelaki';
@@ -517,6 +518,16 @@ export function DashboardPage() {
           notAvail={t('Not available for this dataset.', 'Tiada untuk dataset ini.')}
           lang={lang}
         />
+        {(kpi?.by_income?.length ?? 0) > 0 && (
+          <GroupBars
+            title={t('By Income Group', 'Mengikut Kumpulan Pendapatan')}
+            rows={kpi?.by_income ?? []}
+            labelKey="income"
+            indicator={selectedIndicator}
+            notAvail={t('Not available for this dataset.', 'Tiada untuk dataset ini.')}
+            lang={lang}
+          />
+        )}
       </div>
 
       {/* ── Population breakdown (collapsed by default) ─────────────────────

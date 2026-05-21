@@ -54,6 +54,27 @@ def test_stunting_red_when_far_above_target(red_df):
     stunting = next(k for k in result["indicators"] if k["key"] == "stunting")
     assert stunting["rag"] == "Red"
 
+def test_income_breakdown_present_when_income_col():
+    df = pd.DataFrame({
+        "stunting":    [1] * 10 + [0] * 30,
+        "wasting":     [0] * 40,
+        "underweight": [0] * 40,
+        "overweight":  [0] * 40,
+        "pendapatan":  ["B40"] * 20 + ["M40"] * 12 + ["T20"] * 8,
+    })
+    result = compute_kpi_dashboard(df)
+    assert "by_income" in result
+    groups = [r["income"] for r in result["by_income"]]
+    assert {"B40", "M40", "T20"} <= set(groups)
+    # each group carries per-indicator rates, like the other breakdowns
+    assert all("rates" in r and "status" in r for r in result["by_income"])
+
+
+def test_no_income_breakdown_without_income_col(green_df):
+    # green_df has no income column → empty list, not an error
+    assert compute_kpi_dashboard(green_df)["by_income"] == []
+
+
 def test_district_breakdown_present_when_negeri_col(green_df):
     result = compute_kpi_dashboard(green_df)
     assert result["by_state"]

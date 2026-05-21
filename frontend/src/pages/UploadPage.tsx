@@ -99,6 +99,8 @@ export function UploadPage() {
   const [cacheId, setCacheId] = useState('');
   const [chosenType, setChosenType] = useState('auto');
   const [detectedType, setDetectedType] = useState('');
+  const [sheets, setSheets] = useState<string[]>([]);
+  const [activeSheet, setActiveSheet] = useState('');
   const [rowCount, setRowCount] = useState(0);
   const [wideFormat, setWideFormat] = useState(false);
 
@@ -128,7 +130,7 @@ export function UploadPage() {
 
   /* ── Step 1 → 2: upload + preview ─────────────────────────────────── */
 
-  const handlePreview = async () => {
+  const handlePreview = async (sheetOverride?: string) => {
     if (!files.length) return;
     setLoading(true); setError('');
     try {
@@ -145,11 +147,16 @@ export function UploadPage() {
         : await (async () => {
             fd.append('file', files[0]);
             if (chosenType !== 'auto') fd.append('source_type', chosenType);
-            const r = await api.post('/upload/preview', fd);
+            const url = sheetOverride
+              ? `/upload/preview?sheet=${encodeURIComponent(sheetOverride)}`
+              : '/upload/preview';
+            const r = await api.post(url, fd);
             setCacheId(r.data.cache_id);
             setDetectedType(r.data.detected_source_type || r.data.source_type || 'unknown');
             setRowCount(Number(r.data.rows ?? r.data.row_count) || 0);
             setWideFormat(r.data.is_wide_format || false);
+            setSheets(r.data.sheets || []);
+            setActiveSheet(r.data.active_sheet || sheetOverride || '');
             return r.data.auto_mapping || {};
           })();
 
@@ -340,7 +347,7 @@ export function UploadPage() {
 
           <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
             <button
-              onClick={handlePreview}
+              onClick={() => handlePreview()}
               disabled={!files.length || loading}
               style={{
                 background: 'var(--kkm-blue)', color: '#fff', border: 'none',
@@ -377,6 +384,23 @@ export function UploadPage() {
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               {rowCount.toLocaleString()} {t('rows', 'baris')}
             </span>
+            {sheets.length > 1 && (
+              <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                {t('Sheet', 'Helaian')}
+                <select
+                  value={activeSheet}
+                  disabled={loading}
+                  onChange={e => handlePreview(e.target.value)}
+                  style={{
+                    background: 'var(--surface-2)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-btn)', padding: '4px 8px', fontSize: 12,
+                    color: 'var(--text-primary)', cursor: 'pointer',
+                  }}
+                >
+                  {sheets.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+            )}
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 20 }}>
             {t('Review and adjust column mappings. Confidence below 80% should be verified.', 'Semak dan laraskan pemetaan lajur. Keyakinan di bawah 80% perlu disahkan.')}

@@ -103,6 +103,7 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
         "by_state": [],
         "by_daerah": [],
         "by_gender": [],
+        "by_income": [],
         "by_age": [],
     }
     if df is None or df.empty:
@@ -161,6 +162,16 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
     )
     by_gender = _group_breakdown(df, gender_col, "gender") if gender_col else []
 
+    # by_income — indicator prevalence cross-cut by income group (B40/M40/T20)
+    income_col = next(
+        (c for c in ["pendapatan", "Pendapatan", "PENDAPATAN", "kumpulan_pendapatan",
+                     "Kumpulan_Pendapatan", "kumpulan pendapatan", "income", "Income",
+                     "income_group"]
+         if c in df.columns),
+        None,
+    )
+    by_income = _group_breakdown(df, income_col, "income") if income_col else []
+
     # by_age — bucket months (<24 => "Bawah 2 Tahun") else "2-5 Tahun";
     # fall back to a year column if no months column exists.
     age_col = next(
@@ -205,6 +216,7 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
         "by_state": by_state,
         "by_daerah": by_daerah,
         "by_gender": by_gender,
+        "by_income": by_income,
         "by_age": by_age,
     }
 
