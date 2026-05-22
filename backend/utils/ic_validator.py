@@ -99,7 +99,10 @@ def analyze_and_deduplicate_ids(df: pd.DataFrame, report: dict):
     valid_date_mask = fast_mask & (mm >= 1) & (mm <= 12) & (dd >= 1) & (dd <= 31)
 
     id_cleaned = pd.Series(index=df.index, dtype=object)
-    id_type    = pd.Series("", index=df.index, dtype=str)
+    # dtype=object (not str/StringDtype): the slow path assigns a Python list
+    # through a boolean mask below, which StringDtype's _putmask rejects with
+    # "only integer scalar arrays can be converted to a scalar index".
+    id_type    = pd.Series("", index=df.index, dtype=object)
     is_valid   = pd.Series(False, index=df.index, dtype=bool)
 
     id_cleaned[fast_mask]    = id_series[fast_mask]

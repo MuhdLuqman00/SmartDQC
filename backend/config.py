@@ -3,6 +3,15 @@
 # No hardcoded assumptions about status labels — valid sets are used for
 # *spelling correction only*; the source of truth for classification is WHO 2006.
 
+import re
+
+
+def _norm_key(s: str) -> str:
+    """Collapse a header to alphanumerics only so separator style (space vs
+    underscore vs dot) never blocks a hint match — e.g. 'Tarikh_Pengukuran',
+    'tarikh pengukuran' and 'tarikh.pengukuran' all become 'tarikhpengukuran'."""
+    return re.sub(r"[^a-z0-9]+", "", str(s).lower().strip())
+
 # ─── STANDARD SCHEMA ──────────────────────────────────────────────────────────
 
 STANDARD_SCHEMA = {
@@ -172,7 +181,9 @@ SARAWAK_BAHAGIAN_MAP = {
 
 AUTO_MAPPING_HINTS = {
     "myvass": {
-        "id":             ["no. mykid", "no mykid", "mykid", "no.mykid", "id kanak-kanak"],
+        "id":             ["no. mykid", "no mykid", "mykid", "no.mykid", "id kanak-kanak",
+                           "ic_no_passport", "ic no passport", "no_kp", "no kp",
+                           "ic", "no_ic", "no. ic", "nric", "passport"],
         "nama":           ["nama anak", "nama kanak-kanak", "nama"],
         "jantina":        ["jantina"],
         "tarikh_lahir":   ["tarikh lahir", "dob", "date of birth"],
@@ -205,7 +216,9 @@ AUTO_MAPPING_HINTS = {
     # reference) so NCDC can diverge without affecting MyVASS, and vice versa.
     # The NCDC-specific *cleaning* lives in clean_ncdc(); only mapping hints here.
     "ncdc": {
-        "id":             ["no. mykid", "no mykid", "mykid", "no.mykid", "id kanak-kanak"],
+        "id":             ["no. mykid", "no mykid", "mykid", "no.mykid", "id kanak-kanak",
+                           "ic_no_passport", "ic no passport", "no_kp", "no kp",
+                           "ic", "no_ic", "no. ic", "nric", "passport"],
         "nama":           ["nama anak", "nama kanak-kanak", "nama"],
         "jantina":        ["jantina"],
         "tarikh_lahir":   ["tarikh lahir", "dob", "date of birth"],
@@ -258,9 +271,12 @@ AUTO_MAPPING_HINTS = {
 def detect_source_type(columns: list) -> str:
     """Detect data source from column names (case-insensitive).
 
-    Returns one of: "kpm" (school), "myvass" (TASKA wide format), or "unknown".
-    NCDC is column-identical to MyVASS (same TASKA wide schema) and is therefore
-    not auto-distinguishable — it is chosen via the manual source-type selector.
+    Returns one of: "kpm" (school), "myvass" (real MyVAS vaccination export OR
+    the TASKA wide format), or "unknown".
+    NCDC is column-identical to the *TASKA wide* MyVASS variant (same schema) and
+    is therefore not auto-distinguishable from it — it is chosen via the manual
+    source-type selector. The real MyVAS vaccination schema (IC_NO_PASSPORT /
+    DOSE_DATE / FACILITY_NAME …) IS distinguishable and detected directly.
     Unknown routes to the merge-all-schemas best-match mapper.
     """
     cols_lower = {c.lower().strip() for c in columns}
@@ -272,6 +288,15 @@ def detect_source_type(columns: list) -> str:
     kpm_signals = ["id murid", "nama sekolah", "sekolah", "thn ting", "ting murid"]
     if any(s in joined or s in cols_normalized for s in kpm_signals):
         return "kpm"
+
+    # MyVAS (vaccination registry) signals — the real MyVAS export schema, which
+    # is distinct from the TASKA wide format. Checked BEFORE the TASKA block
+    # because a processed MyVAS sheet can carry both vaccination columns and
+    # TASKA-derived anthropometry columns; the vaccination signal must win.
+    myvas_signals = ["ic no passport", "dose date", "facility name",
+                     "age at vaccination", "kategori fasiliti"]
+    if sum(1 for s in myvas_signals if s in joined or s in cols_normalized) >= 2:
+        return "myvass"
 
     # TASKA wide-format signals (shared by MyVASS and NCDC)
     taska_signals = ["nama taska", "no. mykid", "pendapatan keluarga", "kumpulan umur",
@@ -286,6 +311,11 @@ def detect_source_type(columns: list) -> str:
 def auto_suggest_mapping(columns: list, source_type: str) -> dict:
     """Return a {standard_field: raw_column} mapping based on column name hints."""
     cols_lower = {c.lower().strip(): c for c in columns}
+    # Separator-insensitive index so 'tarikh_pengukuran' matches the
+    # 'tarikh pengukuran' hint, etc. First column wins on a normalised clash.
+    cols_norm: dict = {}
+    for c in columns:
+        cols_norm.setdefault(_norm_key(c), c)
     mapping = {k: None for k in STANDARD_SCHEMA.keys()}
     hints = AUTO_MAPPING_HINTS.get(source_type, {})
 
@@ -312,7 +342,7 @@ def auto_suggest_mapping(columns: list, source_type: str) -> dict:
     field_order = list(STANDARD_SCHEMA.keys()) if generic else list(hints.keys())
     for field in field_order:
         for p in hints.get(field, []):
-            raw = cols_lower.get(p.lower())
+            raw = cols_lower.get(p.lower()) or cols_norm.get(_norm_key(p))
             if raw is None:
                 continue
             if generic and raw in used:
@@ -321,10 +351,13 @@ def auto_suggest_mapping(columns: list, source_type: str) -> dict:
             used.add(raw)
             break
 
-    # Fuzzy fallback: if standard field name itself is in columns, use it
+    # Fuzzy fallback: if the standard field name itself is in columns
+    # (separator-insensitive), use it.
     for field in STANDARD_SCHEMA:
-        if mapping.get(field) is None and field in cols_lower:
-            raw = cols_lower[field]
+        if mapping.get(field) is None:
+            raw = cols_lower.get(field) or cols_norm.get(_norm_key(field))
+            if raw is None:
+                continue
             if generic and raw in used:
                 continue
             mapping[field] = raw
