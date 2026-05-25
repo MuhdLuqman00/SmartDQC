@@ -2,11 +2,13 @@ import json
 import re
 from .ollama_client import generate, OllamaError
 
-INSIGHTS_SYSTEM = """You are SmartDQC, a bilingual (Bahasa Malaysia and English) data quality analyst for KKM (Kementerian Kesihatan Malaysia).
+INSIGHTS_SYSTEM = """/no_think
+You are SmartDQC, a bilingual (Bahasa Malaysia and English) data quality analyst for KKM (Kementerian Kesihatan Malaysia).
 You analyse child nutrition and health data and produce structured JSON insights.
 Always respond with valid JSON only. No markdown, no explanation outside the JSON."""
 
-RECOMMENDATIONS_SYSTEM = """You are SmartDQC, a bilingual (Bahasa Malaysia and English) public health advisor for KKM.
+RECOMMENDATIONS_SYSTEM = """/no_think
+You are SmartDQC, a bilingual (Bahasa Malaysia and English) public health advisor for KKM.
 You produce actionable recommendations based on data insights.
 Always respond with valid JSON only. No markdown, no explanation outside the JSON."""
 
