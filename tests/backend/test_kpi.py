@@ -24,6 +24,57 @@ def red_df():
         "NEGERI":      ["Kelantan"] * 50 + ["Sabah"] * 50,
     })
 
+def test_npan_override_flips_rag(green_df):
+    """A stricter NPAN target turns a Green indicator Red.
+
+    Stunting is 10% — Green at the official 15% target. Lowering the target to
+    5% makes 10% > 5%*1.2, so it must flip to Red and overall_status follows.
+    """
+    result = compute_kpi_dashboard(green_df, npan={"stunting_rate": 5.0})
+    stunting = next(k for k in result["indicators"] if k["key"] == "stunting")
+    assert stunting["npan_target"] == 5.0
+    assert stunting["rag"] == "Red"
+    assert result["overall_status"] == "Red"
+
+
+def test_who_override_flows_to_who_target_and_status(green_df):
+    result = compute_kpi_dashboard(green_df, who={"stunting_rate": 8.0})
+    stunting = next(k for k in result["indicators"] if k["key"] == "stunting")
+    assert stunting["who_target"] == 8.0
+    # 10% stunting vs WHO target 8% -> 10 > 8*1.2=9.6 -> Red
+    assert stunting["who_status"] == "Red"
+
+
+def test_defaults_unchanged_without_override(green_df):
+    result = compute_kpi_dashboard(green_df)
+    stunting = next(k for k in result["indicators"] if k["key"] == "stunting")
+    assert stunting["npan_target"] == 15.0
+    assert stunting["who_target"] == 20.0
+
+
+def test_partial_override_keeps_other_targets_and_labels(green_df):
+    """Overriding only stunting must not drop other indicators or alter labels."""
+    result = compute_kpi_dashboard(green_df, npan={"stunting_rate": 5.0})
+    keys = {k["key"] for k in result["indicators"]}
+    assert keys == {"stunting", "wasting", "underweight", "overweight"}
+    wasting = next(k for k in result["indicators"] if k["key"] == "wasting")
+    assert wasting["npan_target"] == 5.0  # official wasting target, untouched
+    stunting = next(k for k in result["indicators"] if k["key"] == "stunting")
+    assert stunting["label_en"] == "Stunting Rate"
+
+
+def test_override_flows_into_state_breakdown(green_df):
+    """Per-state RAG must use the overridden target too, not the default.
+
+    In green_df all stunting cases fall in Selangor (20/100 = 20%), so at the
+    overridden target of 5% Selangor must be Red — proving the override reached
+    the per-group breakdown, not just the headline indicators.
+    """
+    result = compute_kpi_dashboard(green_df, npan={"stunting_rate": 5.0})
+    selangor = next(r for r in result["by_state"] if r["state"] == "Selangor")
+    assert selangor["status"]["stunting"] == "Red"
+
+
 def test_returns_required_keys(green_df):
     result = compute_kpi_dashboard(green_df)
     assert "indicators" in result

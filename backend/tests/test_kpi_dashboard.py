@@ -1,6 +1,8 @@
 import pandas as pd
 
-from backend.eda.kpi import _group_breakdown
+from backend.eda.kpi import _group_breakdown, official_targets
+
+_NPAN = official_targets()["npan"]
 
 
 def _df():
@@ -14,7 +16,7 @@ def _df():
 
 
 def test_group_breakdown_rates_and_status():
-    rows = _group_breakdown(_df(), "NEGERI", "state")
+    rows = _group_breakdown(_df(), "NEGERI", "state", _NPAN)
     johor = next(r for r in rows if r["state"] == "Johor")
     assert johor["n"] == 2
     assert johor["rates"]["stunting"] == 50.0          # 1 of 2
@@ -26,7 +28,7 @@ def test_group_breakdown_rates_and_status():
 
 def test_group_breakdown_missing_flag_column():
     df = _df().drop(columns=["overweight"])
-    rows = _group_breakdown(df, "NEGERI", "state")
+    rows = _group_breakdown(df, "NEGERI", "state", _NPAN)
     assert "overweight" not in rows[0]["rates"]
     assert "stunting" in rows[0]["rates"]
 
