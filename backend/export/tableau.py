@@ -1,7 +1,22 @@
 """
 Tableau-ready flat aggregated table builder.
 NO ROW CAP — exports ALL aggregated rows.
-Schema: one row per geo_level × location × age_group × indicator × year.
+
+Tidy long format: every row is one data point described by a (pecahan, kategori)
+pair — the breakdown TYPE and its VALUE — instead of a wide table with one
+sparse column per dimension (negeri / daerah / jantina / pendapatan / tahun).
+This is the shape Tableau expects: filter/pivot on `pecahan`, plot `peratus`.
+
+Columns:
+  kumpulan_umur     age band (Bawah 2 Tahun / Bawah 5 Tahun)
+  indikator         indicator key (bantut / susut / ...)
+  indikator_label   human label
+  sumber_indikator  classification source (zscore | source_label)
+  pecahan           breakdown type (Kebangsaan / Negeri / Daerah / Jantina ...)
+  kategori          breakdown value (e.g. "Selangor", "Lelaki", "2024")
+  n_total           denominator for this cell
+  n_kes             affected count
+  peratus           percentage (0-100, 2 dp)
 """
 
 import pandas as pd
@@ -13,150 +28,66 @@ AGE_LABELS = {
     "bawah_5_tahun": "Bawah 5 Tahun",
 }
 
-GEO_LEVELS = [
-    ("negeri",           "Negeri"),
-    ("kawasan_bahagian", "Kawasan / Bahagian"),
-    ("daerah",           "Daerah"),
+COLUMNS = [
+    "kumpulan_umur", "indikator", "indikator_label", "sumber_indikator",
+    "pecahan", "kategori", "n_total", "n_kes", "peratus",
+]
+
+# (report key, pecahan label, value field within each record)
+BREAKDOWNS = [
+    ("by_negeri",            "Negeri",              "negeri"),
+    ("by_kawasan_bahagian",  "Kawasan / Bahagian",  "kawasan_bahagian"),
+    ("by_daerah",            "Daerah",              "daerah"),
+    ("by_negeri_jantina",    "Negeri × Jantina",    None),  # composite value
+    ("by_negeri_pendapatan", "Negeri × Pendapatan", None),  # composite value
+    ("by_pendapatan",        "Pendapatan",          "pendapatan"),
+    ("by_tahun",             "Trend Tahunan",       "tahun_ukur"),
 ]
 
 
+def _row(age_label, ind_key, ind_data, source, pecahan, kategori, rec) -> dict:
+    return {
+        "kumpulan_umur":    age_label,
+        "indikator":        ind_key,
+        "indikator_label":  ind_data.get("label", ind_key),
+        "sumber_indikator": source,
+        "pecahan":          pecahan,
+        "kategori":         kategori,
+        "n_total":          rec.get("n_total", 0),
+        "n_kes":            rec.get("n_affected", 0),
+        "peratus":          round(float(rec.get("pct", 0) or 0), 2),
+    }
+
+
 def build_aggregated_table(report: dict) -> list[dict]:
-    """
-    Flatten the indicators report into Tableau-ready rows.
-    Returns a list of dicts (every row = one data point).
-    """
+    """Flatten the indicators report into tidy Tableau-ready long rows."""
     indicators = report.get("indicators", {})
     if not indicators:
         return []
 
-    rows = []
-
+    rows: list[dict] = []
     for age_key, age_data in indicators.items():
         age_label = AGE_LABELS.get(age_key, age_key)
-
         for ind_key, ind_data in age_data.items():
-            overall = ind_data.get("overall", {})
-            source  = ind_data.get("source", "unknown")
+            source = ind_data.get("source", "unknown")
 
-            # ── National (overall) ─────────────────────────────────────────
-            rows.append({
-                "kumpulan_umur":    age_label,
-                "indikator":        ind_key,
-                "indikator_label":  ind_data.get("label", ind_key),
-                "sumber_indikator": source,
-                "peringkat_geo":    "Kebangsaan",
-                "lokasi":           "Malaysia",
-                "negeri":           None,
-                "kawasan_bahagian": None,
-                "daerah":           None,
-                "jantina":          None,
-                "pendapatan":       None,
-                "tahun_ukur":       None,
-                "n_total":          overall.get("n_total", 0),
-                "n_affected":       overall.get("n_affected", 0),
-                "pct":              overall.get("pct", 0),
-            })
+            # National overall
+            rows.append(_row(age_label, ind_key, ind_data, source,
+                             "Kebangsaan", "Malaysia", ind_data.get("overall", {})))
 
-            # ── Geo level breakdowns ───────────────────────────────────────
-            for geo_key, geo_label in GEO_LEVELS:
-                for rec in ind_data.get(f"by_{geo_key}", []):
-                    rows.append({
-                        "kumpulan_umur":    age_label,
-                        "indikator":        ind_key,
-                        "indikator_label":  ind_data.get("label", ind_key),
-                        "sumber_indikator": source,
-                        "peringkat_geo":    geo_label,
-                        "lokasi":           rec.get(geo_key, ""),
-                        "negeri":           rec.get("negeri"),
-                        "kawasan_bahagian": rec.get("kawasan_bahagian"),
-                        "daerah":           rec.get("daerah"),
-                        "jantina":          None,
-                        "pendapatan":       None,
-                        "tahun_ukur":       None,
-                        "n_total":          rec.get("n_total", 0),
-                        "n_affected":       rec.get("n_affected", 0),
-                        "pct":              rec.get("pct", 0),
-                    })
-
-            # ── Negeri × Jantina ──────────────────────────────────────────
-            for rec in ind_data.get("by_negeri_jantina", []):
-                rows.append({
-                    "kumpulan_umur":    age_label,
-                    "indikator":        ind_key,
-                    "indikator_label":  ind_data.get("label", ind_key),
-                    "sumber_indikator": source,
-                    "peringkat_geo":    "Negeri × Jantina",
-                    "lokasi":           rec.get("negeri", ""),
-                    "negeri":           rec.get("negeri"),
-                    "kawasan_bahagian": None,
-                    "daerah":           None,
-                    "jantina":          rec.get("jantina"),
-                    "pendapatan":       None,
-                    "tahun_ukur":       None,
-                    "n_total":          rec.get("n_total", 0),
-                    "n_affected":       rec.get("n_affected", 0),
-                    "pct":              rec.get("pct", 0),
-                })
-
-            # ── Negeri × Pendapatan ───────────────────────────────────────
-            for rec in ind_data.get("by_negeri_pendapatan", []):
-                rows.append({
-                    "kumpulan_umur":    age_label,
-                    "indikator":        ind_key,
-                    "indikator_label":  ind_data.get("label", ind_key),
-                    "sumber_indikator": source,
-                    "peringkat_geo":    "Negeri × Pendapatan",
-                    "lokasi":           rec.get("negeri", ""),
-                    "negeri":           rec.get("negeri"),
-                    "kawasan_bahagian": None,
-                    "daerah":           None,
-                    "jantina":          None,
-                    "pendapatan":       rec.get("pendapatan"),
-                    "tahun_ukur":       None,
-                    "n_total":          rec.get("n_total", 0),
-                    "n_affected":       rec.get("n_affected", 0),
-                    "pct":              rec.get("pct", 0),
-                })
-
-            # ── Pendapatan (national income breakdown) ─────────────────────
-            for rec in ind_data.get("by_pendapatan", []):
-                rows.append({
-                    "kumpulan_umur":    age_label,
-                    "indikator":        ind_key,
-                    "indikator_label":  ind_data.get("label", ind_key),
-                    "sumber_indikator": source,
-                    "peringkat_geo":    "Pendapatan (Kebangsaan)",
-                    "lokasi":           rec.get("pendapatan", ""),
-                    "negeri":           None,
-                    "kawasan_bahagian": None,
-                    "daerah":           None,
-                    "jantina":          None,
-                    "pendapatan":       rec.get("pendapatan"),
-                    "tahun_ukur":       None,
-                    "n_total":          rec.get("n_total", 0),
-                    "n_affected":       rec.get("n_affected", 0),
-                    "pct":              rec.get("pct", 0),
-                })
-
-            # ── Trend by year ─────────────────────────────────────────────
-            for rec in ind_data.get("by_tahun", []):
-                rows.append({
-                    "kumpulan_umur":    age_label,
-                    "indikator":        ind_key,
-                    "indikator_label":  ind_data.get("label", ind_key),
-                    "sumber_indikator": source,
-                    "peringkat_geo":    "Trend Tahunan",
-                    "lokasi":           str(rec.get("tahun_ukur", "")),
-                    "negeri":           None,
-                    "kawasan_bahagian": None,
-                    "daerah":           None,
-                    "jantina":          None,
-                    "pendapatan":       None,
-                    "tahun_ukur":       rec.get("tahun_ukur"),
-                    "n_total":          rec.get("n_total", 0),
-                    "n_affected":       rec.get("n_affected", 0),
-                    "pct":              rec.get("pct", 0),
-                })
+            # Every breakdown collapses into one (pecahan, kategori) pair
+            for key, pecahan, val_field in BREAKDOWNS:
+                for rec in ind_data.get(key, []):
+                    if val_field is not None:
+                        kategori = rec.get(val_field, "")
+                    elif key == "by_negeri_jantina":
+                        kategori = f"{rec.get('negeri', '')} · {rec.get('jantina', '')}"
+                    elif key == "by_negeri_pendapatan":
+                        kategori = f"{rec.get('negeri', '')} · {rec.get('pendapatan', '')}"
+                    else:
+                        kategori = ""
+                    rows.append(_row(age_label, ind_key, ind_data, source,
+                                     pecahan, str(kategori), rec))
 
     return rows
 

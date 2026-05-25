@@ -35,18 +35,29 @@ _FLAG_TO_KPI: dict[str, str] = {
 # produced the frame. Canonical name is tried first so existing callers and
 # their expected output keys are unaffected.
 _FLAG_ALIASES: dict[str, tuple[str, ...]] = {
-    "stunting":    ("stunting", "Ind_Bantut"),
-    "wasting":     ("wasting", "Ind_Susut"),
-    "underweight": ("underweight", "Ind_Kurang_Berat_Badan"),
-    "overweight":  ("overweight", "Ind_Berlebihan_BB"),
+    "stunting":    ("stunting", "Ind_Bantut", "ind_bantut_zscore"),
+    "wasting":     ("wasting", "Ind_Susut", "ind_susut_zscore"),
+    "underweight": ("underweight", "Ind_Kurang_Berat_Badan", "Ind_Kurang_Berat",
+                    "ind_kurang_berat_zscore"),
+    "overweight":  ("overweight", "Ind_Berlebihan_BB", "Ind_Berlebihan", "Ind_Obes",
+                    "ind_obes_zscore"),
 }
 
 
 def _resolve_flag_col(df: pd.DataFrame, flag: str) -> str | None:
-    """Return the first column present in `df` that represents `flag`."""
+    """Return the first column present in `df` that represents `flag`.
+
+    Matching is case-insensitive so a cleaner emitting `ind_bantut_zscore`,
+    `Ind_Bantut` or `IND_BANTUT` all resolve — the prior exact-match check
+    silently dropped indicators whose casing/suffix differed, leaving the KPI
+    dashboard blank for datasets that ship pre-computed `ind_*_zscore` flags."""
+    lower = {c.lower(): c for c in df.columns}
     for candidate in _FLAG_ALIASES.get(flag, (flag,)):
         if candidate in df.columns:
             return candidate
+        hit = lower.get(candidate.lower())
+        if hit is not None:
+            return hit
     return None
 
 
@@ -65,11 +76,44 @@ def _rag(actual: float, target: float) -> str:
     return "Red"
 
 
-def _group_breakdown(df: pd.DataFrame, group_col: str, key_name: str) -> list[dict]:
+def official_targets() -> dict[str, dict[str, float]]:
+    """Canonical published targets, used as defaults and the 'reset' baseline.
+
+    NPAN = National Plan of Action for Nutrition 2021–2025; WHO = WHO Global
+    Nutrition Targets 2025. Returns only the editable numeric rates per KPI key.
+    """
+    return {
+        "npan": {k: v["target"] for k, v in _NATIONAL_KPIS.items()},
+        "who": dict(_WHO_TARGETS),
+    }
+
+
+def _resolve_targets(
+    npan: dict[str, float] | None, who: dict[str, float] | None
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Merge caller-supplied target overrides over the canonical defaults.
+
+    Overrides carry only the editable numeric `target` per KPI key; labels and
+    any KPI key the caller omits fall back to the hardcoded official values, so
+    a partial or malformed override can never drop an indicator or corrupt a
+    label.
+    """
+    npan_t = {k: v["target"] for k, v in _NATIONAL_KPIS.items()}
+    if npan:
+        npan_t.update({k: float(v) for k, v in npan.items() if k in npan_t})
+    who_t = dict(_WHO_TARGETS)
+    if who:
+        who_t.update({k: float(v) for k, v in who.items() if k in who_t})
+    return npan_t, who_t
+
+
+def _group_breakdown(
+    df: pd.DataFrame, group_col: str, key_name: str, npan_t: dict[str, float]
+) -> list[dict]:
     """Per-group indicator rates + RAG status, keyed by flag name.
 
     `key_name` is the label used for the grouping value in each row
-    (e.g. "state", "gender", "group").
+    (e.g. "state", "gender", "group"). `npan_t` maps kpi_key -> target rate.
     """
     rows: list[dict] = []
     if group_col not in df.columns:
@@ -88,13 +132,18 @@ def _group_breakdown(df: pd.DataFrame, group_col: str, key_name: str) -> list[di
                 grp[col].fillna(0).astype(bool).sum() / n * 100, 2
             )
             rates[flag] = rate
-            status[flag] = _rag(rate, _NATIONAL_KPIS[kpi_key]["target"])
+            status[flag] = _rag(rate, npan_t[kpi_key])
         rows.append({key_name: str(value), "n": int(n),
                      "rates": rates, "status": status})
     return rows
 
 
-def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
+def compute_kpi_dashboard(
+    df: pd.DataFrame,
+    *,
+    npan: dict[str, float] | None = None,
+    who: dict[str, float] | None = None,
+) -> dict:
     empty = {
         "overall_status": "Green",
         "total_children": 0,
@@ -108,6 +157,8 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
     }
     if df is None or df.empty:
         return empty
+
+    npan_t, who_t = _resolve_targets(npan, who)
 
     total = len(df)
     indicators: list[dict] = []
@@ -127,8 +178,8 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
             continue
         count = int(df[col].fillna(0).astype(bool).sum())
         actual = round(count / total * 100, 2)
-        npan = _NATIONAL_KPIS[kpi_key]["target"]
-        who = _WHO_TARGETS.get(kpi_key)
+        npan_target = npan_t[kpi_key]
+        who_target = who_t.get(kpi_key)
         indicators.append({
             "key":          flag,
             "label_en":     _NATIONAL_KPIS[kpi_key]["label_en"],
@@ -136,23 +187,23 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
             "actual":       actual,
             "actual_count": count,
             "total":        total,
-            "npan_target":  npan,
-            "who_target":   who,
-            "gap":          round(actual - npan, 2),
-            "rag":          _rag(actual, npan),
-            "who_status":   _rag(actual, who) if who is not None else None,
+            "npan_target":  npan_target,
+            "who_target":   who_target,
+            "gap":          round(actual - npan_target, 2),
+            "rag":          _rag(actual, npan_target),
+            "who_status":   _rag(actual, who_target) if who_target is not None else None,
         })
 
     # by_state — group on the first available state column
     state_col = next((c for c in _DISTRICT_COLS if c in df.columns), None)
-    by_state = _group_breakdown(df, state_col, "state") if state_col else []
+    by_state = _group_breakdown(df, state_col, "state", npan_t) if state_col else []
 
     # by_daerah — same shape as by_state, scoped to the district column
     # if present. When the endpoint is called with ?state=X the upstream
     # filter has already narrowed df to that state, so by_daerah here is
     # already state-scoped (or national when unfiltered).
     daerah_col = next((c for c in _DAERAH_COLS if c in df.columns), None)
-    by_daerah = _group_breakdown(df, daerah_col, "district") if daerah_col else []
+    by_daerah = _group_breakdown(df, daerah_col, "district", npan_t) if daerah_col else []
 
     # by_gender — tolerant column detection
     gender_col = next(
@@ -160,7 +211,7 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
          if c in df.columns),
         None,
     )
-    by_gender = _group_breakdown(df, gender_col, "gender") if gender_col else []
+    by_gender = _group_breakdown(df, gender_col, "gender", npan_t) if gender_col else []
 
     # by_income — indicator prevalence cross-cut by income group (B40/M40/T20)
     income_col = next(
@@ -170,7 +221,7 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
          if c in df.columns),
         None,
     )
-    by_income = _group_breakdown(df, income_col, "income") if income_col else []
+    by_income = _group_breakdown(df, income_col, "income", npan_t) if income_col else []
 
     # by_age — bucket months (<24 => "Bawah 2 Tahun") else "2-5 Tahun";
     # fall back to a year column if no months column exists.
@@ -198,7 +249,7 @@ def compute_kpi_dashboard(df: pd.DataFrame) -> dict:
         else:
             age_df = None
     by_age = (
-        _group_breakdown(age_df, "_age_group", "group")
+        _group_breakdown(age_df, "_age_group", "group", npan_t)
         if age_df is not None else []
     )
 
@@ -268,6 +319,7 @@ def compute_district_period_snapshots(df: pd.DataFrame) -> list[dict]:
 def compute_trajectory_narratives(
     historical_snapshots: list[dict],
     current_breakdown: list[dict],
+    npan: dict[str, float] | None = None,
 ) -> list[dict]:
     """
     Compute per-district, per-KPI trajectory narratives from historical indicator snapshots.
@@ -276,12 +328,17 @@ def compute_trajectory_narratives(
         historical_snapshots: list of dicts from indicator_snapshots table:
             [{district, period, stunting_rate, wasting_rate, underweight_rate, overweight_rate}, ...]
         current_breakdown: district_breakdown from compute_kpi_dashboard (reserved for enrichment)
+        npan: optional NPAN target overrides (kpi_key -> target rate). When given,
+            the "will meet by 2027" forecast tracks the edited target so the
+            trajectory text agrees with the dashboard cards.
 
     Returns:
         list of dicts, one per (district, kpi_key) with >=2 data points.
     """
     if not historical_snapshots:
         return []
+
+    npan_t, _ = _resolve_targets(npan, None)
 
     df = pd.DataFrame(historical_snapshots)
 
@@ -309,7 +366,7 @@ def compute_trajectory_narratives(
             current_rate  = float(y[-1])
             forecast_rate = slope * (len(grp) - 1 + _FORECAST_PERIODS) + float(coeffs[1])
 
-            target    = _NATIONAL_KPIS[kpi_key]["target"]
+            target    = npan_t[kpi_key]
             will_meet = forecast_rate <= target
 
             if will_meet:

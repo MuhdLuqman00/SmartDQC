@@ -51,6 +51,33 @@ def _hex_to_rgb(h: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
+def _fit_picture(slide, png: bytes, l: float, t: float, w: float, h: float):
+    """Place a PNG inside the (l, t, w, h) box in inches WITHOUT distorting it.
+
+    add_picture with both width and height stretches the image to fill the box,
+    which squished the charts (a ~6:5 PNG forced into a 2:1 slot). Here we add
+    at native size, scale by the limiting dimension to preserve aspect ratio,
+    then centre it within the box."""
+    box_w, box_h = Inches(w), Inches(h)
+    pic = slide.shapes.add_picture(BytesIO(png), Inches(l), Inches(t))
+    scale = min(box_w / pic.width, box_h / pic.height)
+    pic.width = int(pic.width * scale)
+    pic.height = int(pic.height * scale)
+    pic.left = Inches(l) + (box_w - pic.width) // 2
+    pic.top = Inches(t) + (box_h - pic.height) // 2
+    return pic
+
+
+def _rl_image(png: bytes, max_w_cm: float) -> Image:
+    """Build a reportlab Image scaled to max_w_cm wide with its height derived
+    from the PNG's real aspect ratio, so charts are never stretched."""
+    from reportlab.lib.utils import ImageReader
+    iw, ih = ImageReader(BytesIO(png)).getSize()
+    w = max_w_cm * cm
+    h = w * (ih / iw) if iw else max_w_cm * cm
+    return Image(BytesIO(png), width=w, height=h)
+
+
 def _fmt(val) -> str:
     if val is None:
         return "-"
@@ -259,7 +286,7 @@ def _slide_quality(prs, layout, eda: dict, district: str, charts: set[str] | Non
     if charts is None or "quality_bar" in charts:
         chart_png = chart_quality_bar(eda)
         if chart_png:
-            s.shapes.add_picture(BytesIO(chart_png), Inches(6.8), Inches(0.75), Inches(6.1), Inches(5.8))
+            _fit_picture(s, chart_png, 6.8, 0.75, 6.1, 5.8)
 
     _footer_bar_pptx(s, district)
 
@@ -314,28 +341,37 @@ def _slide_indicator_table(prs, layout, kpi_result: dict, district: str, lang: s
             _fmt(rates.get("overweight")),
         ])
 
-    table_h = min(0.42 * len(rows), 3.5)
+    table_h = min(0.42 * len(rows), 5.8)
     if len(rows) > 1:
         _pptx_table(s, rows, l=0.4, t=0.75, w=12.5, h=table_h)
     else:
         _box(s, "No district breakdown available.", 0.5, 1.5, 12, 1.0,
              size=11, color=KKM_NAVY)
 
-    # Honour the per-chart filter; default (charts is None) embeds both.
+    _footer_bar_pptx(s, district)
+
+
+def _slide_indicator_charts(prs, layout, kpi_result: dict, district: str,
+                            charts: set[str] | None = None):
+    """Dedicated chart slide so the indicator charts get a full, uncramped
+    canvas instead of being squeezed under the breakdown table."""
     want_rates  = charts is None or "nutritional_rates" in charts
     want_target = charts is None or "kpi_vs_target" in charts
+    chart2 = chart_nutritional_rates(kpi_result) if want_rates else None
+    chart3 = chart_kpi_vs_target(kpi_result) if want_target else None
+    if not chart2 and not chart3:
+        return
 
-    chart_y = 0.75 + table_h + 0.15
-    chart_h = min(6.9 - chart_y, 3.2)
-    if chart_h > 1.0:
-        chart2 = chart_nutritional_rates(kpi_result) if want_rates else None
-        chart3 = chart_kpi_vs_target(kpi_result) if want_target else None
-        if chart2:
-            s.shapes.add_picture(BytesIO(chart2), Inches(0.4), Inches(chart_y),
-                                 Inches(6.4), Inches(chart_h))
-        if chart3:
-            s.shapes.add_picture(BytesIO(chart3), Inches(7.0), Inches(chart_y),
-                                 Inches(6.0), Inches(chart_h))
+    s = prs.slides.add_slide(layout)
+    _bg(s, KKM_TEAL_LIGHT)
+    _section_bar_pptx(s, "indicator_table")
+
+    # One chart → centred wide; two charts → side by side. Aspect preserved.
+    if chart2 and chart3:
+        _fit_picture(s, chart2, 0.4, 0.85, 6.1, 5.9)
+        _fit_picture(s, chart3, 6.8, 0.85, 6.1, 5.9)
+    else:
+        _fit_picture(s, chart2 or chart3, 2.7, 0.85, 7.9, 5.9)
 
     _footer_bar_pptx(s, district)
 
@@ -379,6 +415,7 @@ def build_pptx_bytes(
 
     if kpi_result:
         _slide_indicator_table(prs, blank, kpi_result, district, lang, charts=charts)
+        _slide_indicator_charts(prs, blank, kpi_result, district, charts=charts)
 
     _slide_methodology(prs, blank, district)
 
@@ -544,9 +581,8 @@ def _pdf_section_quality(story, eda: dict, sec_label, h2, body, charts: set[str]
     if charts is None or "quality_bar" in charts:
         chart_png = chart_quality_bar(eda)
         if chart_png:
-            img = Image(BytesIO(chart_png), width=14 * cm, height=7 * cm)
             story.append(Spacer(1, 0.3 * cm))
-            story.append(img)
+            story.append(_rl_image(chart_png, 14))
 
     story.append(Spacer(1, 0.5 * cm))
 
@@ -609,9 +645,9 @@ def _pdf_section_indicator_table(story, kpi_result: dict, sec_label, lang: str =
         story.append(Spacer(1, 0.3 * cm))
         chart_row = []
         if chart2:
-            chart_row.append(Image(BytesIO(chart2), width=8.5 * cm, height=6.5 * cm))
+            chart_row.append(_rl_image(chart2, 8.5))
         if chart3:
-            chart_row.append(Image(BytesIO(chart3), width=8.5 * cm, height=6.5 * cm))
+            chart_row.append(_rl_image(chart3, 8.5))
         if len(chart_row) == 2:
             chart_tbl = Table([chart_row], colWidths=[8.5 * cm, 8.5 * cm])
             chart_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))

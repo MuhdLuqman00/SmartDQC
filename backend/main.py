@@ -54,6 +54,7 @@ from .db.init_db import init_db, get_db
 from .db.models import Dataset, Session as DBSession, AnalysisResult, User
 from .ai.narrative import generate_narrative
 from .ai.nlq import answer_query
+from .ai.ollama_client import OllamaError
 from .ml.corrections import flag_anomalies
 from .ml.risk_score import compute_risk_scores
 from .export.report import build_pptx_bytes, build_pdf_bytes
@@ -61,6 +62,7 @@ from .eda.kpi import (
     compute_kpi_dashboard,
     compute_trajectory_narratives,
     compute_district_period_snapshots,
+    official_targets,
 )
 
 from datetime import datetime
@@ -71,6 +73,11 @@ from sqlalchemy.orm import Session as SASession
 async def lifespan(app: FastAPI):
     init_db()
     _seed_admin()
+    # Warm the Ollama model in the background so the first AI-insight click
+    # (often after the box has sat idle) doesn't pay a cold model-load and 500.
+    import asyncio
+    from .ai.ollama_client import warmup as _ollama_warmup
+    asyncio.get_running_loop().run_in_executor(None, _ollama_warmup)
     yield
 
 
@@ -167,6 +174,13 @@ def _current_user(authorization: str = Header(...), db=Depends(get_db)):
     return user
 
 
+def require_admin(user=Depends(_current_user)):
+    """Dependency guarding admin-only endpoints. 403 for non-admin users."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user
+
+
 @app.get("/auth/me")
 def me(user=Depends(_current_user)):
     return {"username": user.username, "role": user.role}
@@ -183,7 +197,7 @@ def get_schema():
 
 
 @app.get("/data-dictionary")
-def data_dictionary():
+def data_dictionary(fmt: str = Query("json", pattern="^(json|excel|pdf)$")):
     derived = {
         "id_cleaned": {
             "type": "identifier",
@@ -334,6 +348,22 @@ def data_dictionary():
             "description": "Label sumber status_bmi tidak sepadan dengan BAZ z-skor",
         },
     }
+    if fmt == "excel":
+        from .export.data_dictionary import to_excel as _dd_excel
+        data = _dd_excel(STANDARD_SCHEMA, derived)
+        return StreamingResponse(
+            iter([data]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="SmartDQC_Kamus_Data.xlsx"'},
+        )
+    if fmt == "pdf":
+        from .export.data_dictionary import to_pdf as _dd_pdf
+        data = _dd_pdf(STANDARD_SCHEMA, derived)
+        return StreamingResponse(
+            iter([data]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="SmartDQC_Kamus_Data.pdf"'},
+        )
     return {"source_fields": STANDARD_SCHEMA, "derived_fields": derived}
 
 
@@ -1092,7 +1122,7 @@ import pickle as _pickle
 from pathlib import Path as _Path
 
 _cleaned_cache: dict[str, dict] = {}  # key -> {"df": DataFrame, "stats": dict}
-_CACHE_MAX = 10  # keep at most 10 entries hot in memory
+_CACHE_MAX = 5  # keep at most 5 entries hot in memory
 _DISK_CACHE_MAX = 100  # keep at most 100 entries on disk
 
 _CACHE_DIR = _Path(
@@ -2207,6 +2237,7 @@ async def report_pptx_endpoint(
             "defaults. Known keys: quality_bar, nutritional_rates, kpi_vs_target."
         ),
     ),
+    db=Depends(get_db),
 ):
     """Generate a PPTX report from the cached EDA result."""
     entry = _cache_get(cache_id)
@@ -2219,7 +2250,8 @@ async def report_pptx_endpoint(
     # populated and consistent with the narrative + dashboard score.
     _src = (entry.get("stats") or {}).get("source_type") or "myvass"
     eda_result = run_eda_auto(entry["df"], _src)
-    kpi_result = compute_kpi_dashboard(entry["df"]) if include_kpi else None
+    _tgt = _load_kpi_targets(db)
+    kpi_result = compute_kpi_dashboard(entry["df"], npan=_tgt["npan"], who=_tgt["who"]) if include_kpi else None
     narrative = _get_or_build_narrative(cache_id, entry)
     data = build_pptx_bytes(eda_result, narrative, kpi_result=kpi_result, charts=_parse_charts(charts))
     _log_audit(action="report.pptx", detail=f"cache_id={cache_id} charts={charts or 'default'}")
@@ -2241,6 +2273,7 @@ async def report_pdf_endpoint(
             "defaults. Known keys: quality_bar, nutritional_rates, kpi_vs_target."
         ),
     ),
+    db=Depends(get_db),
 ):
     """Generate a PDF report from the cached EDA result."""
     entry = _cache_get(cache_id)
@@ -2253,7 +2286,8 @@ async def report_pdf_endpoint(
     # populated and consistent with the narrative + dashboard score.
     _src = (entry.get("stats") or {}).get("source_type") or "myvass"
     eda_result = run_eda_auto(entry["df"], _src)
-    kpi_result = compute_kpi_dashboard(entry["df"]) if include_kpi else None
+    _tgt = _load_kpi_targets(db)
+    kpi_result = compute_kpi_dashboard(entry["df"], npan=_tgt["npan"], who=_tgt["who"]) if include_kpi else None
     narrative = _get_or_build_narrative(cache_id, entry)
     data = build_pdf_bytes(eda_result, narrative, kpi_result=kpi_result, charts=_parse_charts(charts))
     _log_audit(action="report.pdf", detail=f"cache_id={cache_id} charts={charts or 'default'}")
@@ -2289,6 +2323,7 @@ async def kpi_dashboard_endpoint(
     cache_id: str = Query(..., description="UUID from /clean/run or /join/run"),
     district: str | None = Query(None, description="Filter by district name"),
     state: str | None = Query(None, description="Filter by state name (full name, case-insensitive)"),
+    db=Depends(get_db),
 ):
     """Return RAG traffic-light KPI status benchmarked against Malaysian national targets."""
     entry = _cache_get(cache_id)
@@ -2311,7 +2346,8 @@ async def kpi_dashboard_endpoint(
         )
         if state_col:
             df = df[df[state_col].astype(str).str.strip().str.lower() == state.strip().lower()]
-    result = compute_kpi_dashboard(df)
+    _tgt = _load_kpi_targets(db)
+    result = compute_kpi_dashboard(df, npan=_tgt["npan"], who=_tgt["who"])
     return JSONResponse(content=json_safe(result))
 
 
@@ -2344,16 +2380,18 @@ class TrajectoryRequest(BaseModel):
 
 
 @app.post("/kpi/trajectory")
-async def kpi_trajectory(req: TrajectoryRequest):
+async def kpi_trajectory(req: TrajectoryRequest, db=Depends(get_db)):
     """Compute per-district trajectory narratives and 2027 target forecast from indicator snapshots."""
     return compute_trajectory_narratives(
-        req.historical_snapshots, req.current_breakdown
+        req.historical_snapshots, req.current_breakdown,
+        npan=_load_kpi_targets(db)["npan"],
     )
 
 
 @app.post("/kpi/trajectory/auto")
 async def kpi_trajectory_auto(
     cache_id: str = Query(..., description="UUID from /clean/run or /join/run"),
+    db=Depends(get_db),
 ):
     """Per-district trajectory narratives derived from the cached dataset's own
     multi-year (tahun_ukur) data. Returns an empty narrative list for single-year
@@ -2364,7 +2402,7 @@ async def kpi_trajectory_auto(
             404, "cache_id not found — run /clean/run first or check the UUID"
         )
     snapshots = compute_district_period_snapshots(entry["df"])
-    narratives = compute_trajectory_narratives(snapshots, [])
+    narratives = compute_trajectory_narratives(snapshots, [], npan=_load_kpi_targets(db)["npan"])
     periods = sorted({s["period"] for s in snapshots})
     return JSONResponse(content=json_safe({
         "narratives":    narratives,
@@ -3166,6 +3204,16 @@ async def ai_narrative(
     try:
         eda_result = run_eda_auto(df, source_type)
         narrative = generate_narrative(eda_result)
+    except OllamaError as e:
+        # AI model unreachable / still loading — give the user an actionable
+        # message (and a 503 so the frontend can offer a retry) rather than a
+        # bare 500. Common after a long idle while the model reloads.
+        logger.warning("AI narrative unavailable for %s: %s", cache_id, e)
+        raise HTTPException(
+            503,
+            "AI model is starting up or unavailable — please wait a few seconds "
+            "and try again. (Model warming after idle.)",
+        )
     except Exception as e:
         raise HTTPException(500, f"Narrative generation failed: {e}")
     # Persist by cache_id (overwrite — regeneration is latest-wins) so the
@@ -4000,6 +4048,18 @@ def _get_setting(key: str, default, db) -> dict:
     return default
 
 
+def _load_kpi_targets(db) -> dict:
+    """Current KPI targets for analytics: official defaults overlaid with any
+    admin override stored under 'kpi.targets'. Returns {npan, who} dicts ready
+    to pass into compute_kpi_dashboard / compute_trajectory_narratives."""
+    defaults = official_targets()
+    stored = _get_setting("kpi.targets", {}, db)
+    return {
+        "npan": {**defaults["npan"], **(stored.get("npan") or {})},
+        "who":  {**defaults["who"],  **(stored.get("who")  or {})},
+    }
+
+
 def _set_setting(key: str, value, db) -> None:
     from .db.models import AppSetting
 
@@ -4041,3 +4101,56 @@ def toggle_rule(body: dict, db=Depends(get_db)):
     _set_setting("rules.all", current, db)
     _log_audit(action="settings.rule_toggle", detail=f"{rule}={'on' if enabled else 'off'}")
     return current
+
+
+def _kpi_targets_view(db) -> dict:
+    """GET-shaped view: current values, official defaults, and per-set source
+    marker (official label vs 'custom' when a value differs from the default)."""
+    defaults = official_targets()
+    current = _load_kpi_targets(db)
+    return {
+        "current":  current,
+        "defaults": defaults,
+        "source": {
+            "npan": "custom" if current["npan"] != defaults["npan"] else "npan_2021_2025",
+            "who":  "custom" if current["who"]  != defaults["who"]  else "who_2025",
+        },
+    }
+
+
+@app.get("/settings/kpi-targets")
+def get_kpi_targets(db=Depends(get_db)):
+    return _kpi_targets_view(db)
+
+
+@app.post("/settings/kpi-targets")
+def post_kpi_targets(body: dict, user=Depends(require_admin), db=Depends(get_db)):
+    """Admin-only. Validates each target is numeric and in 0–100, merges over any
+    existing override (so editing one set never drops the other), and audits who
+    changed what. WHO and NPAN are both editable; labels are never touched."""
+    defaults = official_targets()
+    stored = _get_setting("kpi.targets", {}, db)
+    out = {"npan": dict(stored.get("npan") or {}), "who": dict(stored.get("who") or {})}
+    for grp in ("npan", "who"):
+        incoming = body.get(grp)
+        if incoming is None:
+            continue
+        if not isinstance(incoming, dict):
+            raise HTTPException(status_code=422, detail=f"'{grp}' must be an object")
+        for k, v in incoming.items():
+            if k not in defaults[grp]:
+                raise HTTPException(status_code=422, detail=f"Unknown KPI key '{k}' in {grp}")
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail=f"{grp}.{k} must be numeric")
+            if not (0.0 <= fv <= 100.0):
+                raise HTTPException(status_code=422, detail=f"{grp}.{k} must be between 0 and 100")
+            out[grp][k] = fv
+    _set_setting("kpi.targets", out, db)
+    _log_audit(
+        action="settings.kpi_targets",
+        detail=";".join(f"{g}.{k}={v}" for g, d in out.items() for k, v in d.items()),
+        user_id=user.id,
+    )
+    return _kpi_targets_view(db)

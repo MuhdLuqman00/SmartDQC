@@ -398,6 +398,16 @@ def run_eda(df: pd.DataFrame, mapping: dict, source_type: str,
     inv_map = {v: k for k, v in mapping.items() if v}
     df = df.rename(columns=inv_map)
 
+    # A rename can collide a mapped raw column with one that already carries the
+    # canonical name (e.g. cleaned data has both the source 'waz' and the
+    # cleaner-added 'WAZ', and the auto-mapping renames 'WAZ' -> 'waz'). That
+    # leaves DUPLICATE column labels, which makes df[col] return a DataFrame
+    # instead of a Series and crashes column profiling / z-score steps with
+    # "'DataFrame' object has no attribute 'dtype'" — surfacing as a 500 on the
+    # AI-narrative path. Keep the first occurrence of each label.
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated()]
+
     # ── Mapping coverage ──────────────────────────────────────────────────────
     from ..config import CORE_FIELDS
     report["mapped_fields"]            = [f for f in STANDARD_SCHEMA if f in df.columns]
@@ -637,8 +647,16 @@ def run_eda(df: pd.DataFrame, mapping: dict, source_type: str,
     report["data_completeness"]   = compute_data_completeness(df)
 
     # ── KKM Indicators ────────────────────────────────────────────────────────
-    if any(c in df.columns for c in ["status_berat", "status_tinggi", "status_bmi",
-                                     "waz", "haz", "baz"]):
+    # Case-insensitive guard: the cleaners + add_who_zscores emit UPPERCASE
+    # WAZ/HAZ/BAZ (and Ind_* / *_Status), so a lowercase-only membership test
+    # never matched → indicators stayed {} → the Tableau/aggregated export was
+    # always empty. Compare against a lowercased column set instead.
+    _cols_lower = {c.lower() for c in df.columns}
+    _indicator_signals = {"status_berat", "status_tinggi", "status_bmi",
+                          "waz", "haz", "baz",
+                          "waz_status", "haz_status", "baz_status",
+                          "ind_bantut", "ind_susut", "ind_kurang_berat_badan"}
+    if _cols_lower & _indicator_signals:
         report["indicators"] = compute_indicators(df)
         report["trajectory"] = compute_trajectory(df)
 
