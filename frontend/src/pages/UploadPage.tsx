@@ -692,6 +692,12 @@ export function UploadPage() {
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700 }}>
               {t('Cleaning Complete', 'Pembersihan Selesai')}
             </h2>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>
+              {t(
+                `${Number(cleanStats.rows_after).toLocaleString()} clean records are ready to explore.`,
+                `${Number(cleanStats.rows_after).toLocaleString()} rekod bersih sedia untuk diterokai.`,
+              )}
+            </p>
           </div>
 
           {persistWarn && (

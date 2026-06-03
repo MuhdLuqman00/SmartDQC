@@ -13,58 +13,60 @@ interface Feat {
   en: string; bm: string;
   descEn: string; descBm: string;
   to: string;
-  api: string;
+  /* Plain-language "key detail" shown in the card footer. Replaces the raw
+     API paths (dev noise for KKM users) the audit flagged (14 · P3). */
+  techEn: string; techBm: string;
 }
 
 const FEATURES: Feat[] = [
   { n: 1,  icon: <FileInput size={18} />,  en: 'Data Input & Detection', bm: 'Input & Pengesanan Data',
     descEn: 'CSV/XLSX ingest with automatic source-type detection.', descBm: 'Muat naik CSV/XLSX dengan pengesanan jenis sumber automatik.',
-    to: '/upload', api: '/upload/preview · /clean/detect-type' },
+    to: '/upload', techEn: 'Auto-detects MyVASS, NCDC & KPM formats', techBm: 'Auto-kesan format MyVASS, NCDC & KPM' },
   { n: 2,  icon: <GitMerge size={18} />,   en: 'Column Mapping (AI)', bm: 'Pemetaan Lajur (AI)',
     descEn: 'Fuzzy + AI schema mapping across 3 drift scenarios.', descBm: 'Pemetaan skema kabur + AI merentas 3 senario.',
-    to: '/upload', api: '/mapping/validate · schema_mapper' },
+    to: '/upload', techEn: 'AI matches your columns to the standard schema', techBm: 'AI memadankan lajur anda ke skema standard' },
   { n: 3,  icon: <Brush size={18} />,      en: 'Data Cleaning', bm: 'Pembersihan Data',
     descEn: 'Source-specific cleaning, IC validation, imputation.', descBm: 'Pembersihan khusus sumber, pengesahan IC, imputasi.',
-    to: '/cleaning', api: '/clean/run · /clean/run-multi' },
+    to: '/cleaning', techEn: 'Source-specific rules with a full audit trail', techBm: 'Peraturan khusus sumber dengan jejak audit penuh' },
   { n: 4,  icon: <Calculator size={18} />, en: 'Derived Fields', bm: 'Medan Terbitan',
     descEn: 'Age, geo, WHO Z-scores and nutrition indicators.', descBm: 'Umur, geo, Z-skor WHO dan penunjuk pemakanan.',
-    to: '/explorer', api: 'who_zscore · indicators' },
+    to: '/explorer', techEn: 'Computes WHO 2006 nutrition indicators', techBm: 'Mengira penunjuk pemakanan WHO 2006' },
   { n: 5,  icon: <ShieldCheck size={18} />, en: 'Quality Assessment', bm: 'Penilaian Kualiti',
     descEn: '7-dimension quality rubric + 5-tab Excel report.', descBm: 'Rubrik kualiti 7-dimensi + laporan Excel 5-tab.',
-    to: '/quality', api: '/clean/quality-check' },
+    to: '/quality', techEn: '7-dimension scoring with an Excel report', techBm: 'Pemarkahan 7-dimensi dengan laporan Excel' },
   { n: 6,  icon: <BarChart3 size={18} />,  en: 'Statistical Analysis', bm: 'Analisis Statistik',
     descEn: 'Numerical, categorical and indicator statistics.', descBm: 'Statistik berangka, kategori dan penunjuk.',
-    to: '/explorer', api: '/eda/run' },
+    to: '/explorer', techEn: 'Per-column and indicator statistics', techBm: 'Statistik setiap lajur dan penunjuk' },
   { n: 7,  icon: <PieChart size={18} />,   en: 'Visualization', bm: 'Visualisasi',
     descEn: 'Choropleth map, KPI charts, column distributions.', descBm: 'Peta koropleth, carta KPI, taburan lajur.',
-    to: '/geo', api: 'charts · ChoroplethMap' },
+    to: '/geo', techEn: 'Interactive maps and charts', techBm: 'Peta dan carta interaktif' },
   { n: 8,  icon: <Download size={18} />,   en: 'Export & Integration', bm: 'Eksport & Integrasi',
     descEn: 'Cleaned CSV/XLSX, Tableau aggregation, data dictionary.', descBm: 'CSV/XLSX bersih, agregasi Tableau, kamus data.',
-    to: '/reports', api: '/clean/download-cached · /export/aggregated-cached · /data-dictionary' },
+    to: '/reports', techEn: 'Cleaned files, Tableau feed & data dictionary', techBm: 'Fail bersih, suapan Tableau & kamus data' },
   { n: 9,  icon: <ScanSearch size={18} />,   en: 'AI Insight Generation', bm: 'Penjanaan Cerapan AI',
     descEn: 'Bilingual 5W1H executive narrative from the data.', descBm: 'Naratif eksekutif 5W1H dwibahasa daripada data.',
-    to: '/ai', api: '/ai/narrative' },
+    to: '/ai', techEn: 'Runs on local AI — data stays on the server', techBm: 'Guna AI tempatan — data kekal di pelayan' },
   { n: 10, icon: <Lightbulb size={18} />,  en: 'Smart Recommendations', bm: 'Cadangan Pintar',
     descEn: 'Prioritised action recommendations with reasoning.', descBm: 'Cadangan tindakan keutamaan dengan rasional.',
-    to: '/ai', api: '/ai/narrative (recommendations)' },
+    to: '/ai', techEn: 'Prioritised actions with plain-language reasoning', techBm: 'Tindakan keutamaan dengan rasional yang jelas' },
   { n: 11, icon: <TrendingUp size={18} />, en: 'Composite Risk Index', bm: 'Indeks Risiko Komposit',
     descEn: 'Severity-aware child-level risk score 0–100.', descBm: 'Skor risiko peringkat kanak-kanak 0–100 mengikut keterukan.',
-    to: '/geo', api: '/risk/score' },
+    to: '/geo', techEn: 'A child-level risk score from 0 to 100', techBm: 'Skor risiko kanak-kanak dari 0 hingga 100' },
   { n: 12, icon: <Wand2 size={18} />,      en: 'Smart Data Correction', bm: 'Pembetulan Data Pintar',
     descEn: 'IsolationForest anomalies + inline cell editing.', descBm: 'Anomali IsolationForest + suntingan sel inline.',
-    to: '/quality', api: '/ml/suggest · /clean/cell' },
+    to: '/quality', techEn: 'Flags outliers and lets you fix cells inline', techBm: 'Tanda pencilan dan baiki sel secara inline' },
   { n: 13, icon: <MessageSquare size={18} />, en: 'Natural Language Querying', bm: 'Pertanyaan Bahasa Tabii',
     descEn: 'Ask questions in BM/EN; get answers + charts.', descBm: 'Tanya soalan BM/EN; dapat jawapan + carta.',
-    to: '/ai', api: '/ai/nlq' },
+    to: '/ai', techEn: 'Ask in Malay or English', techBm: 'Tanya dalam Bahasa Melayu atau Inggeris' },
   { n: 14, icon: <Link2 size={18} />,      en: 'Entity Resolution', bm: 'Resolusi Entiti',
     descEn: 'Cross-dataset record linkage by IC number.', descBm: 'Pautan rekod merentas dataset mengikut nombor IC.',
-    to: '/datasets', api: '/entity/link' },
+    to: '/datasets', techEn: 'Links records across datasets by IC', techBm: 'Pautkan rekod merentas dataset mengikut IC' },
   { n: 15, icon: <FileText size={18} />,   en: 'Automated Reports', bm: 'Laporan Automatik',
     descEn: 'KKM-branded PDF & PPTX with charts.', descBm: 'PDF & PPTX berjenama KKM dengan carta.',
-    to: '/reports', api: '/report/pdf · /report/pptx' },
+    to: '/reports', techEn: 'KKM-branded PDF and PowerPoint', techBm: 'PDF dan PowerPoint berjenama KKM' },
   { n: 16, icon: <Target size={18} />,     en: 'Benchmarking & Targets', bm: 'Penanda Aras & Sasaran',
     descEn: 'RAG vs NPAN/WHO targets + per-district 2027 trajectory.', descBm: 'RAG vs sasaran NPAN/WHO + trajektori 2027 setiap daerah.',
-    to: '/geo', api: '/kpi/dashboard · /kpi/trajectory/auto' },
+    to: '/geo', techEn: 'Tracks progress to NPAN & WHO 2027 targets', techBm: 'Jejak kemajuan ke sasaran NPAN & WHO 2027' },
 ];
 
 export function FeaturesPage() {
@@ -89,8 +91,8 @@ export function FeaturesPage() {
           {t('16 Integrated Capabilities', '16 Keupayaan Bersepadu')}
         </h1>
         <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.72)', maxWidth: 620, lineHeight: 1.7 }}>
-          {t('Every SmartDQC feature is wired to a live backend endpoint. Select any capability to jump straight to it.',
-             'Setiap ciri SmartDQC disambungkan ke titik akhir backend langsung. Pilih mana-mana keupayaan untuk terus ke sana.')}
+          {t('Every capability below is built in and ready to use. Select one to jump straight to it.',
+             'Setiap keupayaan di bawah tersedia dan sedia digunakan. Pilih satu untuk terus ke sana.')}
         </p>
       </div>
 
@@ -136,11 +138,11 @@ export function FeaturesPage() {
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               {lang === 'en' ? f.descEn : f.descBm}
             </p>
-            <div className="mono" style={{
-              fontSize: 11, color: 'var(--text-muted)', paddingTop: 10,
-              borderTop: '1px solid var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            <div style={{
+              fontSize: 12, color: 'var(--text-muted)', paddingTop: 10,
+              borderTop: '1px solid var(--border)', lineHeight: 1.5,
             }}>
-              {f.api}
+              {lang === 'en' ? f.techEn : f.techBm}
             </div>
           </button>
         ))}
