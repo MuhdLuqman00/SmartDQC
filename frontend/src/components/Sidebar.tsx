@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Upload, Table2, ShieldCheck, Sparkles, BarChart3,
+  LayoutDashboard, Upload, Table2, ShieldCheck, Bot, BarChart3,
   BookOpen, Clock, Settings, ClipboardList, ChevronRight, ChevronLeft,
   MapPin, Brush, LayoutGrid, Link2,
 } from 'lucide-react';
@@ -40,7 +40,7 @@ const GROUPS: Group[] = [
     items: [
       // AI narrative + NLQ are now one unified page; the /chatbot route
       // still resolves (redirects to /ai) so old bookmarks keep working.
-      { path: '/ai', en: 'AI Assistant', bm: 'Pembantu AI', icon: <Sparkles size={18} /> },
+      { path: '/ai', en: 'AI Assistant', bm: 'Pembantu AI', icon: <Bot size={18} /> },
     ],
   },
   {
@@ -96,14 +96,14 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
           width: 38, height: 38, borderRadius: 11, flexShrink: 0,
           background: 'var(--gradient-gold)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: "'Plus Jakarta Sans', sans-serif",
+          fontFamily: 'var(--font-display)',
           fontWeight: 800, fontSize: 16, color: '#0F1B2F',
           boxShadow: '0 4px 14px rgba(200,150,46,0.35)',
         }}>S</div>
         {!collapsed && (
           <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
             <span style={{
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              fontFamily: 'var(--font-display)',
               fontWeight: 800, fontSize: 16, color: '#fff', whiteSpace: 'nowrap',
             }}>
               Smart<span style={{ color: 'var(--accent-soft)' }}>DQC</span>

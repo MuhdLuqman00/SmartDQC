@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Lightbulb, ListChecks } from 'lucide-react';
+import { ScrollText, Lightbulb, ListChecks } from 'lucide-react';
 import { useLang } from '../context/LanguageContext';
 
 export interface NarrativeRecommendation {
@@ -53,7 +53,7 @@ export function NarrativePanel({ raw }: { raw: NarrativeRaw }) {
       {summary && (
         <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--kkm-sky)', fontWeight: 600, fontSize: 12 }}>
-            <Sparkles size={13} /> {t('Executive Summary', 'Ringkasan Eksekutif')}
+            <ScrollText size={13} /> {t('Executive Summary', 'Ringkasan Eksekutif')}
           </div>
           <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-primary)' }}>{summary}</div>
         </div>

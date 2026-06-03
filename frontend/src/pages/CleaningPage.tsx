@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle2, ArrowRight, Download, FileSpreadsheet,
-  Table2, Sparkles, ArrowDownUp,
+  Table2, FileSearch, ArrowDownUp,
 } from 'lucide-react';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
@@ -54,7 +54,7 @@ export function CleaningPage() {
     return (
       <SessionGuard>
         <div style={{ ...card, padding: 36, textAlign: 'center' }}>
-          <Sparkles size={40} style={{ color: 'var(--text-muted)', marginBottom: 14 }} />
+          <FileSearch size={40} style={{ color: 'var(--text-muted)', marginBottom: 14 }} />
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
             {t('Cleaning summary not in this session', 'Ringkasan pembersihan tiada dalam sesi ini')}
           </h2>
@@ -91,7 +91,7 @@ export function CleaningPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
             <CheckCircle2 size={26} style={{ color: 'var(--accent-soft)' }} />
             <div>
-              <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 20 }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20 }}>
                 {t('Cleaning Complete', 'Pembersihan Selesai')}
               </div>
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{filename}</div>

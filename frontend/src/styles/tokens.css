@@ -11,7 +11,8 @@
   --primary:        #1B2A4A;   /* header, sidebar, primary CTAs            */
   --primary-dark:   #0F1B2F;   /* hover / active                          */
   --primary-light:  #2E4A7A;   /* secondary buttons, badges, accents      */
-  --accent:         #C8962E;   /* gold — highlights, warning badges        */
+  --accent:         #C99700;   /* Songket Gold — sharp accent, use ON navy / decorative */
+  --accent-strong:  #8A6A1F;   /* deep gold — functional accent on LIGHT surfaces (≥4.5:1) */
   --accent-soft:    #E8C77A;
 
   /* Legacy aliases (consumed across all pages — DO NOT rename) */
@@ -37,7 +38,7 @@
 
   /* ── Status ──────────────────────────────────────────────────────────── */
   --success:    #2D7D46;
-  --warning:    #C8962E;
+  --warning:    #A85916;   /* warm orange — decoupled from brand gold (≈5:1 on white) */
   --danger:     #C0392B;
   --info:       #2E4A7A;
   --success-bg: #E8F3EC;
@@ -80,21 +81,30 @@
   /* ── Gradients & glow ────────────────────────────────────────────────── */
   --gradient-navy:  linear-gradient(160deg, #1B2A4A 0%, #0F1B2F 100%);
   --gradient-brand: linear-gradient(135deg, #2E4A7A 0%, #1B2A4A 60%, #0F1B2F 100%);
-  --gradient-gold:  linear-gradient(135deg, #E8C77A 0%, #C8962E 100%);
+  --gradient-gold:  linear-gradient(135deg, #E8C77A 0%, #C99700 100%);
   --gradient-sheen: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.10) 50%, transparent 100%);
   --glow-accent:    0 0 0 3px rgba(46,74,122,0.18);
 
-  /* ── Geometry ────────────────────────────────────────────────────────── */
-  --radius-card: 14px;
-  --radius-btn:  9px;
-  --radius-pill: 999px;
-  --radius-sm:   6px;
+  /* ── Typography (Phase 2 · "Ministerial Document") ───────────────────────
+     Newsreader (serif) for display/headings & hero numbers gives official
+     dossier gravitas; Public Sans (the US-gov design-system grotesque) keeps
+     dense body/UI/table text crisp; IBM Plex Mono for figures. Tokenised so
+     the type stack is a one-line change. */
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-body:    'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, 'JetBrains Mono', monospace;
 
-  /* ── Elevation (navy-tinted, layered) ────────────────────────────────── */
-  --shadow-sm:   0 1px 2px rgba(15,27,47,0.06);
-  --shadow-card: 0 1px 3px rgba(15,27,47,0.06), 0 6px 18px rgba(15,27,47,0.05);
-  --shadow-md:   0 4px 12px rgba(15,27,47,0.10), 0 12px 32px rgba(15,27,47,0.07);
-  --shadow-lg:   0 12px 36px rgba(15,27,47,0.16), 0 24px 64px rgba(15,27,47,0.12);
+  /* ── Geometry (Phase 2 — crisper "dossier" edges) ────────────────────── */
+  --radius-card: 10px;
+  --radius-btn:  7px;
+  --radius-pill: 999px;
+  --radius-sm:   5px;
+
+  /* ── Elevation (Phase 2 — flatter, "printed on paper" depth) ─────────── */
+  --shadow-sm:   0 1px 1px rgba(15,27,47,0.05);
+  --shadow-card: 0 1px 2px rgba(15,27,47,0.05), 0 3px 10px rgba(15,27,47,0.04);
+  --shadow-md:   0 2px 8px rgba(15,27,47,0.08), 0 8px 22px rgba(15,27,47,0.06);
+  --shadow-lg:   0 8px 28px rgba(15,27,47,0.14), 0 18px 50px rgba(15,27,47,0.10);
   --shadow-inset: inset 0 1px 0 rgba(255,255,255,0.5);
 
   /* ── Spacing scale (4/8 rhythm) ──────────────────────────────────────── */
@@ -115,7 +125,8 @@
   --primary:        #2E4A7A;
   --primary-dark:   #0B1424;
   --primary-light:  #4A6BA0;
-  --accent:         #E0B458;
+  --accent:         #E6B422;   /* Songket Gold (dark) — on navy surfaces */
+  --accent-strong:  #D4A93A;   /* deep gold — functional accent on dark light-ish surfaces */
   --accent-soft:    #F0D596;
 
   --kkm-deep:  #0B1424;
@@ -137,7 +148,7 @@
   --text-on-navy:   #EAEFF8;
 
   --success:    #38A169;
-  --warning:    #E0B458;
+  --warning:    #E8973A;   /* warm orange (dark) — decoupled from brand gold */
   --danger:     #E06A5C;
   --info:       #6E8FC4;
   --success-bg: #0E2A1C;

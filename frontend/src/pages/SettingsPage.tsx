@@ -286,7 +286,7 @@ export function SettingsPage() {
                           {t('Recommended', 'Disyorkan')}
                         </span>
                       )}
-                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--kkm-blue)', fontFamily: 'JetBrains Mono, monospace' }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--kkm-blue)', fontFamily: 'var(--font-mono)' }}>
                         {display.toFixed(s.step < 1 ? 1 : 0)}{s.unit}
                       </span>
                     </div>
@@ -368,7 +368,7 @@ export function SettingsPage() {
                         {desc && (
                           <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 4 }}>{desc}</div>
                         )}
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 4 }}>{rule.id}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 4 }}>{rule.id}</div>
                       </div>
                       {!rule.enabled && (
                         <span style={{ fontSize: 10, fontWeight: 600, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 8px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
@@ -423,7 +423,7 @@ export function SettingsPage() {
                               type="number" min={0} max={100} step={0.1}
                               value={val ?? ''}
                               onChange={e => setKpiValue(grp, ind.key, parseFloat(e.target.value))}
-                              style={{ width: 80, textAlign: 'right', padding: '6px 8px', fontSize: 13, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--kkm-blue)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}
+                              style={{ width: 80, textAlign: 'right', padding: '6px 8px', fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--kkm-blue)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}
                             />
                             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>%</span>
                           </div>

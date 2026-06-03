@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileInput, GitMerge, Brush, Calculator, ShieldCheck, BarChart3,
-  PieChart, Download, Sparkles, Lightbulb, TrendingUp, Wand2,
+  PieChart, Download, ScanSearch, Lightbulb, TrendingUp, Wand2,
   MessageSquare, Link2, FileText, Target, ArrowUpRight,
 } from 'lucide-react';
 import { useLang } from '../context/LanguageContext';
@@ -41,7 +41,7 @@ const FEATURES: Feat[] = [
   { n: 8,  icon: <Download size={18} />,   en: 'Export & Integration', bm: 'Eksport & Integrasi',
     descEn: 'Cleaned CSV/XLSX, Tableau aggregation, data dictionary.', descBm: 'CSV/XLSX bersih, agregasi Tableau, kamus data.',
     to: '/reports', api: '/clean/download-cached · /export/aggregated-cached · /data-dictionary' },
-  { n: 9,  icon: <Sparkles size={18} />,   en: 'AI Insight Generation', bm: 'Penjanaan Cerapan AI',
+  { n: 9,  icon: <ScanSearch size={18} />,   en: 'AI Insight Generation', bm: 'Penjanaan Cerapan AI',
     descEn: 'Bilingual 5W1H executive narrative from the data.', descBm: 'Naratif eksekutif 5W1H dwibahasa daripada data.',
     to: '/ai', api: '/ai/narrative' },
   { n: 10, icon: <Lightbulb size={18} />,  en: 'Smart Recommendations', bm: 'Cadangan Pintar',
@@ -85,7 +85,7 @@ export function FeaturesPage() {
         }}>
           {t('Platform Capabilities', 'Keupayaan Platform')}
         </div>
-        <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 28, fontWeight: 800, marginBottom: 10 }}>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 800, marginBottom: 10 }}>
           {t('16 Integrated Capabilities', '16 Keupayaan Bersepadu')}
         </h1>
         <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.72)', maxWidth: 620, lineHeight: 1.7 }}>
@@ -127,7 +127,7 @@ export function FeaturesPage() {
                     {t('Live', 'Aktif')}
                   </span>
                 </div>
-                <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginTop: 3 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginTop: 3 }}>
                   {lang === 'en' ? f.en : f.bm}
                 </div>
               </div>

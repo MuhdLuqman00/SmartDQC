@@ -253,9 +253,9 @@ export function DashboardPage() {
           width: 56, height: 56, borderRadius: 14,
           background: 'var(--kkm-sky)', color: '#fff',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 22,
+          fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22,
         }}>S</div>
-        <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>
           {t('Welcome to SmartDQC', 'Selamat datang ke SmartDQC')}
         </h2>
         <p style={{ color: 'var(--text-secondary)', maxWidth: 440, lineHeight: 1.7 }}>
@@ -269,7 +269,7 @@ export function DashboardPage() {
           style={{
             background: 'var(--kkm-blue)', color: '#fff', border: 'none',
             borderRadius: 'var(--radius-btn)', padding: '12px 28px',
-            fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 15,
+            fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,
             display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
           }}
         >
@@ -319,7 +319,7 @@ export function DashboardPage() {
 
       {/* ── Header + indicator selector ─────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 20, fontWeight: 700, margin: 0 }}>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700, margin: 0 }}>
           {t('Child Nutrition Status (Under 5 Years Old)', 'Status Pemakanan Kanak-Kanak Bawah 5 Tahun')}
         </h1>
         <div style={{ flex: 1 }} />

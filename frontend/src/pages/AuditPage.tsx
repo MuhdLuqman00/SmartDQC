@@ -87,7 +87,7 @@ export function AuditPage() {
             <tbody>
               {pageRows.map((entry, i) => (
                 <tr key={entry.id} style={{ borderBottom: i < pageRows.length - 1 ? '1px solid var(--border)' : 'none', background: i % 2 === 0 ? 'transparent' : 'var(--surface-2)' }}>
-                  <td style={{ padding: '10px 16px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '10px 16px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
                     {new Date(entry.created_at).toLocaleString()}
                   </td>
                   <td style={{ padding: '10px 16px' }}>

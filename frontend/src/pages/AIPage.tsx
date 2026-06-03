@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Sparkles, Cpu, Plus, Trash2, MessageSquare } from 'lucide-react';
+import { Send, ScanSearch, Cpu, Plus, Trash2, MessageSquare } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
@@ -245,7 +245,7 @@ export function AIPage() {
               display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
             }}
           >
-            <Sparkles size={15} />
+            <ScanSearch size={15} />
             {narrativeLoading ? t('Generating…', 'Sedang menjana…') : t('Generate AI Insight', 'Jana Cerapan AI')}
           </button>
         </div>
@@ -364,7 +364,7 @@ export function AIPage() {
                   ) : msg.role === 'narrative' ? (
                     <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '2px 12px 12px 12px', padding: '14px 16px', fontSize: 13, lineHeight: 1.7 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--kkm-sky)', fontWeight: 600, fontSize: 12 }}>
-                        <Sparkles size={13} /> {t('AI Insight', 'Cerapan AI')}
+                        <ScanSearch size={13} /> {t('AI Insight', 'Cerapan AI')}
                       </div>
                       {msg.raw
                         ? <NarrativePanel raw={msg.raw} />

@@ -86,7 +86,7 @@ export function MiniBarCard({ title, data, labelKey, maxBars = 12 }: Props): JSX
             <LabelList
               dataKey="count"
               position="top"
-              style={{ fontSize: 10, fill: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}
+              style={{ fontSize: 10, fill: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
               formatter={(v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v))}
             />
           </Bar>

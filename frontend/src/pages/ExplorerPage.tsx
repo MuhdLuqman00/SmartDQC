@@ -181,7 +181,7 @@ export function ExplorerPage() {
                             setEditing({ rowIdx: absIdx, col: c });
                             setEditValue(row[c] == null ? '' : String(row[c]));
                           }}
-                          style={{ padding: '9px 14px', color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', cursor: editable ? 'cell' : 'default' }}
+                          style={{ padding: '9px 14px', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', cursor: editable ? 'cell' : 'default' }}
                         >
                           {isEditing ? (
                             <input
@@ -194,7 +194,7 @@ export function ExplorerPage() {
                                 if (e.key === 'Enter') commitEdit();
                                 if (e.key === 'Escape') setEditing(null);
                               }}
-                              style={{ width: 120, padding: '2px 6px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', border: '1px solid var(--kkm-blue)', borderRadius: 4, background: 'var(--surface)', color: 'var(--text-primary)' }}
+                              style={{ width: 120, padding: '2px 6px', fontSize: 12, fontFamily: 'var(--font-mono)', border: '1px solid var(--kkm-blue)', borderRadius: 4, background: 'var(--surface)', color: 'var(--text-primary)' }}
                             />
                           ) : (
                             row[c] == null

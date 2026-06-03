@@ -80,7 +80,7 @@ export function ChartTooltip({
                 )}
                 {name}
               </span>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'JetBrains Mono, monospace' }}>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
                 {value}
               </span>
             </div>

@@ -63,7 +63,7 @@ export function HistoryPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{s.filename}</div>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--text-muted)' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
                       #{s.cache_id.slice(0, 6)}
                     </span>
                   </div>

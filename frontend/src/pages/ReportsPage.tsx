@@ -204,7 +204,7 @@ export function ReportsPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 {card.icon}
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, fontFamily: 'var(--font-display)' }}>
                     {lang === 'en' ? card.titleEn : card.titleBm}
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>

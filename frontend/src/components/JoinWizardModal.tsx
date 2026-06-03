@@ -189,7 +189,7 @@ export function JoinWizardModal({ left, right, onClose, onJoined }: Props): JSX.
         {/* ── Header ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
           <GitMerge size={20} style={{ color: 'var(--kkm-blue)' }} />
-          <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 17, fontWeight: 700, margin: 0, flex: 1 }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, margin: 0, flex: 1 }}>
             {t('Join Datasets', 'Cantum Set Data')}
           </h3>
           <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
@@ -312,7 +312,7 @@ export function JoinWizardModal({ left, right, onClose, onJoined }: Props): JSX.
                         cursor: 'pointer', fontSize: 13,
                       }}>
                         <input type="checkbox" checked={sel} onChange={() => toggleKey(col)} />
-                        <span style={{ color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{col}</span>
+                        <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{col}</span>
                       </label>
                     );
                   })}
@@ -456,7 +456,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
       borderRadius: 8, padding: '8px 12px',
     }}>
       <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: accent ? 'var(--kkm-blue)' : 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{value}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: accent ? 'var(--kkm-blue)' : 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{value}</div>
     </div>
   );
 }

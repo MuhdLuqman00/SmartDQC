@@ -77,7 +77,7 @@ export function EntityLinkPanel({ datasetIds }: { datasetIds: string[] }) {
             ].map(([label, val]) => (
               <div key={String(label)}>
                 <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{label}</div>
-                <div style={{ fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>{val}</div>
+                <div style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{val}</div>
               </div>
             ))}
           </div>
@@ -90,7 +90,7 @@ export function EntityLinkPanel({ datasetIds }: { datasetIds: string[] }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {result.profiles.map((p, i) => (
                 <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)', marginBottom: 6 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', marginBottom: 6 }}>
                     {p.ic || t('(no IC)', '(tiada IC)')}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

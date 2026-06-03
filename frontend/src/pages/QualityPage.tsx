@@ -25,10 +25,10 @@ function ScoreGauge({ score }: { score: number }) {
       <circle cx={70} cy={70} r={r} fill="none" stroke={color} strokeWidth={12}
         strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
         transform="rotate(-90 70 70)" style={{ transition: 'stroke-dasharray 0.8s ease' }} />
-      <text x={70} y={68} textAnchor="middle" fontSize={24} fontWeight={700} fill="var(--text-primary)" fontFamily="Inter, sans-serif">
+      <text x={70} y={70} textAnchor="middle" fontSize={32} fontWeight={600} fill="var(--text-primary)" fontFamily="'Newsreader', Georgia, serif">
         {score.toFixed(0)}
       </text>
-      <text x={70} y={85} textAnchor="middle" fontSize={11} fill="var(--text-muted)" fontFamily="Inter, sans-serif">
+      <text x={70} y={88} textAnchor="middle" fontSize={11} fill="var(--text-muted)" fontFamily="'Public Sans', sans-serif">
         / 100
       </text>
     </svg>
@@ -123,7 +123,7 @@ export function QualityPage() {
               ].map(row => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-secondary)' }}>{row.label}</span>
-                  <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{row.value}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{row.value}</span>
                 </div>
               ))}
             </div>
@@ -150,13 +150,13 @@ export function QualityPage() {
                 >
                   {sevIcon(issue.severity)}
                   <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{translateIssue(issue, lang)}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
                     {Number(issue.count).toLocaleString()}
                   </span>
                   {issue.samples?.length ? (expanded === i ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null}
                 </div>
                 {expanded === i && issue.samples && (
-                  <div style={{ padding: '0 20px 12px 44px', fontSize: 12, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
+                  <div style={{ padding: '0 20px 12px 44px', fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                     {issue.samples.join(', ')}
                   </div>
                 )}
@@ -217,8 +217,8 @@ export function QualityPage() {
                   <tbody>
                     {anomalies.map((a, i) => (
                       <tr key={i} style={{ borderBottom: i < anomalies.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                        <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{a.row_index}</td>
-                        <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-secondary)' }}>{a.columns.join(', ')}</td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{a.row_index}</td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{a.columns.join(', ')}</td>
                         <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{a.suggestion}</td>
                       </tr>
                     ))}

@@ -50,8 +50,10 @@ export function TopBar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>SmartDQC</span>
         <ChevronRight size={13} style={{ color: 'var(--text-muted)' }} />
-        <h1 style={{
-          fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 16,
+        {/* Signature: gold "letterhead" keyline under the page title — the
+           one distinctive detail carried across all 14 routes. */}
+        <h1 className="kkm-keyline" style={{
+          fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16,
           color: 'var(--text-primary)', whiteSpace: 'nowrap',
         }}>
           {lang === 'en' ? page.en : page.bm}

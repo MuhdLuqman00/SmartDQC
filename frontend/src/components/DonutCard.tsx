@@ -166,7 +166,7 @@ export function DonutCard({ title, data, colorFor, innerRadiusPct = 0.55 }: Prop
           }}>
             <div style={{
               fontSize: 18, fontWeight: 700, color: 'var(--text-primary)',
-              fontFamily: 'JetBrains Mono, monospace', lineHeight: 1,
+              fontFamily: 'var(--font-mono)', lineHeight: 1,
             }}>
               {total.toLocaleString()}
             </div>

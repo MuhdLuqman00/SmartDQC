@@ -330,7 +330,7 @@ export function LinkagePage() {
                       {ds.filename}
                     </div>
                     {/* Short stable id — datasets frequently share a filename. */}
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
                       #{ds.id.slice(0, 6)}
                     </span>
                   </div>
@@ -394,7 +394,7 @@ export function LinkagePage() {
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
             <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
               <span>{t('Name threshold', 'Ambang nama')}</span>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--text-secondary)' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>
                 {settings.name_fuzzy_threshold.toFixed(2)}
               </span>
             </span>
@@ -530,7 +530,7 @@ export function LinkagePage() {
             ].map(([l, v]) => (
               <div key={String(l)}>
                 <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{l}</div>
-                <div style={{ fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>{v}</div>
+                <div style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{v}</div>
               </div>
             ))}
           </div>
@@ -577,7 +577,7 @@ export function LinkagePage() {
                       }}
                     >
                       {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', minWidth: 130 }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', minWidth: 130 }}>
                         {p.ic || t('(no IC)', '(tiada IC)')}
                       </span>
                       <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -618,7 +618,7 @@ export function LinkagePage() {
                         ))}
                       </span>
                       <span style={{
-                        fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 12,
+                        fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12,
                         color: confidenceColor(p.confidence), minWidth: 50, textAlign: 'right',
                       }}>
                         {(p.confidence * 100).toFixed(0)}%
@@ -709,13 +709,13 @@ export function LinkagePage() {
                                 return (
                                   <tr key={j} style={{ borderTop: '1px solid var(--border)' }}>
                                     <td style={{ padding: '6px 10px', fontWeight: 600, color: 'var(--text-primary)', textTransform: 'uppercase' }}>{s.source_type}</td>
-                                    <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>{s.ic || '—'}</td>
+                                    <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{s.ic || '—'}</td>
                                     <td style={cellStyle('name')}>{s.name || '—'}</td>
                                     <td style={cellStyle('dob')}>{s.dob || '—'}</td>
                                     <td style={cellStyle('gender')}>{s.gender || '—'}</td>
                                     <td style={cellStyle('state')}>{s.state || '—'}</td>
                                     <td style={cellStyle('district')}>{s.district || '—'}</td>
-                                    <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--text-muted)' }}>
+                                    <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
                                       {datasetLookup.get(s.dataset_id) ?? s.dataset_id.slice(0, 8) + '…'}
                                     </td>
                                   </tr>
@@ -757,14 +757,14 @@ export function LinkagePage() {
                                   <tbody>
                                     {tl.map((m, j) => (
                                       <tr key={j} style={{ borderTop: '1px solid var(--border)' }}>
-                                        <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>{m.date}</td>
+                                        <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{m.date}</td>
                                         <td style={{ padding: '6px 10px', fontWeight: 600, textTransform: 'uppercase' }}>{m.source_type}</td>
-                                        <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{m.weight_kg ?? '—'}</td>
-                                        <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{m.height_cm ?? '—'}</td>
-                                        <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{m.bmi ?? '—'}</td>
-                                        <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{m.waz ?? '—'}</td>
-                                        <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{m.haz ?? '—'}</td>
-                                        <td style={{ padding: '6px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{m.baz ?? '—'}</td>
+                                        <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)' }}>{m.weight_kg ?? '—'}</td>
+                                        <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)' }}>{m.height_cm ?? '—'}</td>
+                                        <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)' }}>{m.bmi ?? '—'}</td>
+                                        <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)' }}>{m.waz ?? '—'}</td>
+                                        <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)' }}>{m.haz ?? '—'}</td>
+                                        <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)' }}>{m.baz ?? '—'}</td>
                                       </tr>
                                     ))}
                                   </tbody>

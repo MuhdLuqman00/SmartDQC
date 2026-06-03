@@ -488,7 +488,7 @@ export function GeoPage() {
                 ] as [string, number][]).map(([l, v]) => (
                   <div key={l}>
                     <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{l}</div>
-                    <div style={{ fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>{v}</div>
+                    <div style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{v}</div>
                   </div>
                 ))}
               </div>
@@ -515,9 +515,9 @@ export function GeoPage() {
                     {risk.district_summary.map((d, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{d.district}</td>
-                        <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{d.avg_risk}</td>
-                        <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace' }}>{d.max_risk}</td>
-                        <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{d.n_records}</td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'var(--font-mono)' }}>{d.avg_risk}</td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'var(--font-mono)' }}>{d.max_risk}</td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{d.n_records}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -554,7 +554,7 @@ export function GeoPage() {
                           <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_BG[st], color: STATUS_VAR[st] }}>
                             {lang === 'en' ? n.trajectory_status : n.trajectory_status_bm}
                           </span>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginLeft: 'auto' }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
                             {n.current_rate}% → {n.forecast_2027}% ({t('target', 'sasaran')} {n.target}%)
                           </span>
                         </div>

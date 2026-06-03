@@ -271,7 +271,7 @@ export function UploadPage() {
           borderRadius: 'var(--radius-card)', padding: '32px',
           boxShadow: 'var(--shadow-card)',
         }}>
-          <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
             {t('Upload File', 'Muat Naik Fail')}
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 20 }}>
@@ -376,7 +376,7 @@ export function UploadPage() {
           boxShadow: 'var(--shadow-card)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 18, fontWeight: 700 }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700 }}>
               {t('Map Columns', 'Peta Lajur')}
             </h2>
             <span style={{
@@ -446,7 +446,7 @@ export function UploadPage() {
               <tbody>
                 {mapping.map((row, i) => (
                   <tr key={row.raw_column} style={{ borderBottom: i < mapping.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <td style={{ padding: '10px 14px', fontSize: 13, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-secondary)' }}>
+                    <td style={{ padding: '10px 14px', fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
                       {row.raw_column}
                     </td>
                     <td style={{ padding: '10px 14px' }}>
@@ -508,7 +508,7 @@ export function UploadPage() {
       )}
       {step === 3 && qualityCheck && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '32px', boxShadow: 'var(--shadow-card)' }}>
-          <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 18, fontWeight: 700, marginBottom: 20 }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, marginBottom: 20 }}>
             {t('Quality Check', 'Semak Kualiti')}
           </h2>
 
@@ -519,7 +519,7 @@ export function UploadPage() {
             border: `1px solid ${qualityCheck.score >= 80 ? 'var(--success)' : qualityCheck.score >= 60 ? 'var(--warning)' : 'var(--danger)'}`,
             borderRadius: 10, padding: '16px 20px', marginBottom: 20,
           }}>
-            <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'Inter, sans-serif' }}>
+            <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-body)' }}>
               {Number(qualityCheck.score).toFixed(1)}%
             </div>
             <div>
@@ -543,7 +543,7 @@ export function UploadPage() {
             }}>
               <AlertCircle size={15} style={{ color: issue.severity === 'critical' ? 'var(--danger)' : 'var(--warning)', flexShrink: 0 }} />
               <span style={{ flex: 1, fontSize: 13 }}>{translateIssue(issue, lang)}</span>
-              <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{Number(issue.count).toLocaleString()}</span>
+              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{Number(issue.count).toLocaleString()}</span>
             </div>
           ))}
 
@@ -576,7 +576,7 @@ export function UploadPage() {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '32px', boxShadow: 'var(--shadow-card)' }}>
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
             <CheckCircle2 size={44} style={{ color: 'var(--kkm-teal)', marginBottom: 12 }} />
-            <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 20, fontWeight: 700 }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700 }}>
               {t('Cleaning Complete', 'Pembersihan Selesai')}
             </h2>
           </div>
@@ -649,7 +649,7 @@ export function UploadPage() {
 
           <button
             onClick={() => nav('/')}
-            style={{ width: '100%', background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)', padding: '12px', fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 15, cursor: 'pointer' }}
+            style={{ width: '100%', background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)', padding: '12px', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}
           >
             {t('View on Dashboard →', 'Lihat di Papan Pemuka →')}
           </button>
