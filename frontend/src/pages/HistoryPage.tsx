@@ -12,12 +12,13 @@ interface Session {
   row_count: number; quality_score: number; created_at: string | null;
 }
 
-function groupByMonth(sessions: Session[]): Record<string, Session[]> {
+function groupByMonth(sessions: Session[], lang: 'en' | 'bm'): Record<string, Session[]> {
+  const locale = lang === 'bm' ? 'ms-MY' : 'en-US';
   const groups: Record<string, Session[]> = {};
   for (const s of sessions) {
     const key = s.created_at
-      ? new Date(s.created_at).toLocaleDateString('default', { year: 'numeric', month: 'long' })
-      : 'Unknown';
+      ? new Date(s.created_at).toLocaleDateString(locale, { year: 'numeric', month: 'long' })
+      : (lang === 'bm' ? 'Tidak diketahui' : 'Unknown');
     (groups[key] ||= []).push(s);
   }
   return groups;
@@ -41,7 +42,7 @@ export function HistoryPage() {
       action={{ label: t('Upload Dataset', 'Muat Naik Dataset'), to: '/upload' }} />
   );
 
-  const groups = groupByMonth(sessions);
+  const groups = groupByMonth(sessions, lang);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
@@ -60,7 +61,12 @@ export function HistoryPage() {
               }}>
                 <Clock size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{s.filename}</div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{s.filename}</div>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--text-muted)' }}>
+                      #{s.cache_id.slice(0, 6)}
+                    </span>
+                  </div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                     {s.source_type && <span style={{ textTransform: 'uppercase', fontWeight: 600, marginRight: 8 }}>{s.source_type}</span>}
                     {Number(s.row_count).toLocaleString()} {t('rows', 'baris')}

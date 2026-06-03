@@ -7,16 +7,19 @@ import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
 import { RagBadge, scoreToRag } from '../components/RagBadge';
 import { persistWarning } from '../lib/persistWarning';
+import { translateIssue } from '../lib/issueCatalog';
 
 /* ── Step types ──────────────────────────────────────────────────────── */
 
 type Step = 1 | 2 | 3 | 4;
 
 interface MappingRow { raw_column: string; standard_field: string; confidence: number; }
-interface Issue { description: string; severity: 'critical' | 'warning' | 'info'; count: number; }
+interface Issue { code?: string; description: string; severity: 'critical' | 'warning' | 'info'; count: number; field?: string; pct?: number; }
+interface Rule { code?: string; description: string; }
 interface CleanStats {
   rows_before: number; rows_after: number;
   quality_score: number; rules_applied: string[];
+  rules?: Rule[];
   top_issues: Issue[];
 }
 
@@ -233,6 +236,7 @@ export function UploadPage() {
         rows_after: Number(r.data.rows_after) || 0,
         quality_score: Number(r.data.quality_score) || 0,
         rules_applied: Array.isArray(r.data.rules_applied) ? r.data.rules_applied : [],
+        rules: Array.isArray(r.data.rules) ? r.data.rules : undefined,
         top_issues: Array.isArray(r.data.top_issues) ? r.data.top_issues : [],
       });
       setPersistWarn(persistWarning(r.data, lang));
@@ -538,7 +542,7 @@ export function UploadPage() {
               padding: '10px 0', borderBottom: i < qualityCheck.issues.slice(0, 5).length - 1 ? '1px solid var(--border)' : 'none',
             }}>
               <AlertCircle size={15} style={{ color: issue.severity === 'critical' ? 'var(--danger)' : 'var(--warning)', flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 13 }}>{issue.description}</span>
+              <span style={{ flex: 1, fontSize: 13 }}>{translateIssue(issue, lang)}</span>
               <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{Number(issue.count).toLocaleString()}</span>
             </div>
           ))}
@@ -602,20 +606,28 @@ export function UploadPage() {
             ))}
           </div>
 
-          {cleanStats.rules_applied.length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-                {t('Rules Applied', 'Peraturan Digunakan')}
+          {(() => {
+            // Prefer localisable `rules` (code + description); fall back to the
+            // legacy string[] for parity with older responses.
+            const ruleList: Rule[] = cleanStats.rules && cleanStats.rules.length
+              ? cleanStats.rules
+              : cleanStats.rules_applied.map(d => ({ description: d }));
+            if (!ruleList.length) return null;
+            return (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+                  {t('Rules Applied', 'Peraturan Digunakan')}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {ruleList.map((r, i) => (
+                    <span key={r.code ?? r.description ?? i} style={{ fontSize: 11, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '3px 10px', color: 'var(--text-secondary)' }}>
+                      {translateIssue(r, lang)}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {cleanStats.rules_applied.map((r: string) => (
-                  <span key={r} style={{ fontSize: 11, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '3px 10px', color: 'var(--text-secondary)' }}>
-                    {r}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <a href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/clean/download-cached/${cacheId}?format=csv`}

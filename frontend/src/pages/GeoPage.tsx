@@ -16,6 +16,7 @@ import {
   isHistogramBlock,
   isScatterBlock,
 } from '../lib/chartCatalog';
+import { formatGroupLabel, GroupLabelKey } from '../lib/labels';
 
 // ── KPI types ─────────────────────────────────────────────────────────────────
 
@@ -219,12 +220,20 @@ function toDistricts(k: KpiDashboard | null, ind: IndicatorKey): District[] {
 // the cramped vertical recharts bars whose x-axis labels overlapped once a
 // dataset had many states/daerah. Values are already 0-100 percentages.
 
-function toRankRows(rows: KpiGroupRow[], groupKey: string, indicator: IndicatorKey): RankRow[] {
+const GROUP_LABEL_KEYS: Record<string, GroupLabelKey> = {
+  gender: 'gender', group: 'group', income: 'income',
+};
+
+function toRankRows(rows: KpiGroupRow[], groupKey: string, indicator: IndicatorKey, lang: 'en' | 'bm'): RankRow[] {
+  const labelKey = GROUP_LABEL_KEYS[groupKey];
   return (rows || []).map(r => {
     const rates = (r.rates as Record<string, number>) ?? {};
     const status = (r.status as Record<string, string>) ?? {};
+    const raw = String((r as Record<string, unknown>)[groupKey] ?? '—');
     return {
-      label: String((r as Record<string, unknown>)[groupKey] ?? '—'),
+      // Gender/age/income labels are BM-hardcoded by the backend; translate so
+      // they follow the toggle. State/daerah are proper nouns → passthrough.
+      label: labelKey ? formatGroupLabel(labelKey, raw, lang) : raw,
       value: Number(rates[indicator] ?? 0),
       status: ragToStatus(status[indicator]),
       n: Number(r.n ?? 0),
@@ -438,15 +447,15 @@ export function GeoPage() {
         {/* Breakdown ranked bars — filtered by the global indicator selector */}
         {kpi && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 16 }}>
-            <RankBars title={`${t('By State', 'Mengikut Negeri')} — ${indLabel}`}   rows={toRankRows(kpi.by_state, 'state', selectedIndicator)}      lang={lang} />
+            <RankBars title={`${t('By State', 'Mengikut Negeri')} — ${indLabel}`}   rows={toRankRows(kpi.by_state, 'state', selectedIndicator, lang)}      lang={lang} />
             {(kpi.by_daerah?.length ?? 0) > 0 && (
-              <RankBars title={`${t('By Daerah', 'Mengikut Daerah')} — ${indLabel}`} rows={toRankRows(kpi.by_daerah!, 'district', selectedIndicator)} lang={lang} />
+              <RankBars title={`${t('By Daerah', 'Mengikut Daerah')} — ${indLabel}`} rows={toRankRows(kpi.by_daerah!, 'district', selectedIndicator, lang)} lang={lang} />
             )}
-            <RankBars title={`${t('By Gender', 'Mengikut Jantina')} — ${indLabel}`} rows={toRankRows(kpi.by_gender, 'gender', selectedIndicator)}    lang={lang} />
+            <RankBars title={`${t('By Gender', 'Mengikut Jantina')} — ${indLabel}`} rows={toRankRows(kpi.by_gender, 'gender', selectedIndicator, lang)}    lang={lang} />
             {(kpi.by_income?.length ?? 0) > 0 && (
-              <RankBars title={`${t('By Income', 'Mengikut Pendapatan')} — ${indLabel}`} rows={toRankRows(kpi.by_income!, 'income', selectedIndicator)} lang={lang} />
+              <RankBars title={`${t('By Income', 'Mengikut Pendapatan')} — ${indLabel}`} rows={toRankRows(kpi.by_income!, 'income', selectedIndicator, lang)} lang={lang} />
             )}
-            <RankBars title={`${t('By Age', 'Mengikut Umur')} — ${indLabel}`}       rows={toRankRows(kpi.by_age, 'group', selectedIndicator)}        lang={lang} />
+            <RankBars title={`${t('By Age', 'Mengikut Umur')} — ${indLabel}`}       rows={toRankRows(kpi.by_age, 'group', selectedIndicator, lang)}        lang={lang} />
           </div>
         )}
 

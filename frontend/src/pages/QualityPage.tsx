@@ -8,8 +8,10 @@ import { RagBadge, scoreToRag } from '../components/RagBadge';
 import { ColumnHistogram } from '../components/ColumnHistogram';
 import { DonutCard } from '../components/DonutCard';
 import { catalogByHome, isPieArrayBlock, isDonutObjectBlock } from '../lib/chartCatalog';
+import { translateIssue } from '../lib/issueCatalog';
 
-interface Issue { description: string; severity: 'critical' | 'warning' | 'info'; count: number; samples?: string[]; }
+interface Issue { code?: string; description: string; severity: 'critical' | 'warning' | 'info'; count: number; samples?: string[]; field?: string; pct?: number; }
+interface Rule { code?: string; description: string; }
 interface AnomalyRow { row_index: number; columns: string[]; suggestion: string; }
 
 function ScoreGauge({ score }: { score: number }) {
@@ -43,7 +45,11 @@ export function QualityPage() {
   const score = qualityScore ?? 0;
   const stats = cleanStats as Record<string, unknown> | null;
   const issues: Issue[] = (stats?.top_issues as Issue[]) ?? [];
-  const rulesApplied: string[] = (stats?.rules_applied as string[]) ?? [];
+  // Prefer localisable `rules` (code + description); fall back to the legacy
+  // string[] for older cached sessions.
+  const rulesApplied: Rule[] = Array.isArray(stats?.rules)
+    ? (stats!.rules as Rule[])
+    : ((stats?.rules_applied as string[]) ?? []).map(d => ({ description: d }));
 
   const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
   /* Classification breakdown — fetched from the same /charts/blocks
@@ -143,7 +149,7 @@ export function QualityPage() {
                   onClick={() => setExpanded(expanded === i ? null : i)}
                 >
                   {sevIcon(issue.severity)}
-                  <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{issue.description}</span>
+                  <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{translateIssue(issue, lang)}</span>
                   <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>
                     {Number(issue.count).toLocaleString()}
                   </span>
@@ -165,9 +171,9 @@ export function QualityPage() {
                 {t('Rules Applied', 'Peraturan Digunakan')}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {rulesApplied.map((r: string) => (
-                  <span key={r} style={{ fontSize: 12, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '4px 12px', color: 'var(--text-secondary)' }}>
-                    {r}
+                {rulesApplied.map((r, i) => (
+                  <span key={r.code ?? r.description ?? i} style={{ fontSize: 12, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '4px 12px', color: 'var(--text-secondary)' }}>
+                    {translateIssue(r, lang)}
                   </span>
                 ))}
               </div>

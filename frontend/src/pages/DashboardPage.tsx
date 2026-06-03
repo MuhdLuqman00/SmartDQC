@@ -14,6 +14,7 @@ import {
   isBarLabeledBlock,
   isTrendRecordsBlock,
 } from '../lib/chartCatalog';
+import { formatGroupLabel } from '../lib/labels';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -177,19 +178,8 @@ const RAG_TRACK_VAR: Record<'green' | 'amber' | 'red', string> = {
 const ragSolid = (r?: Rag): string => RAG_VAR[ragToLower(r)];
 const ragTrack = (r?: Rag): string => RAG_TRACK_VAR[ragToLower(r)];
 
-/* Backend returns data-driven gender values and BM-hardcoded age buckets.
-   Normalise then translate so labels follow the chosen UI language. */
-function formatGroupLabel(labelKey: 'gender' | 'group' | 'income', raw: string, lang: 'en' | 'bm'): string {
-  const v = raw.trim().toLowerCase();
-  if (labelKey === 'gender') {
-    if (['lelaki', 'l', 'male', 'm'].includes(v)) return lang === 'en' ? 'Male' : 'Lelaki';
-    if (['perempuan', 'p', 'female', 'f'].includes(v)) return lang === 'en' ? 'Female' : 'Perempuan';
-    return raw;
-  }
-  if (v === 'bawah 2 tahun') return lang === 'en' ? 'Under 2 Years' : 'Bawah 2 Tahun';
-  if (v === '2-5 tahun' || v === '2–5 tahun') return lang === 'en' ? '2–5 Years' : '2-5 Tahun';
-  return raw;
-}
+/* Demographic-label localisation now lives in lib/labels.ts so the Dashboard
+   and Geo & Risk breakdowns translate identically. */
 
 /* ── Component ──────────────────────────────────────────────────────────── */
 

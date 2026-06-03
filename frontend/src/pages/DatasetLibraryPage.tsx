@@ -122,9 +122,16 @@ export function DatasetLibraryPage() {
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4, wordBreak: 'break-all' }}>{ds.filename}</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-all', flex: 1, minWidth: 0 }}>{ds.filename}</div>
+                {/* Short stable id — datasets often share a filename; the id is
+                    the only guaranteed-unique distinguisher. */}
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                  #{ds.id.slice(0, 6)}
+                </span>
+              </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-                {ds.row_count?.toLocaleString() ?? '—'} {t('rows', 'baris')} · {new Date(ds.created_at).toLocaleDateString()}
+                {ds.row_count?.toLocaleString() ?? '—'} {t('rows', 'baris')} · {new Date(ds.created_at).toLocaleString()}
               </div>
               {ds.quality_score != null && <RagBadge rag={scoreToRag(ds.quality_score)} lang={lang} />}
               <div style={{ marginTop: 14 }}>
@@ -178,6 +185,11 @@ export function DatasetLibraryPage() {
               };
               const trendColor = (tr?: string) =>
                 tr === 'improving' ? 'var(--kkm-teal)' : tr === 'worsening' ? 'var(--danger)' : 'var(--text-muted)';
+              const trendLabel = (tr?: string) =>
+                tr === 'improving' ? t('Improving', 'Bertambah baik')
+                  : tr === 'worsening' ? t('Worsening', 'Bertambah buruk')
+                  : tr === 'stable' ? t('Stable', 'Stabil')
+                  : (tr ?? '—');
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                   <table style={{ borderCollapse: 'collapse', width: '100%' }}>
@@ -214,7 +226,7 @@ export function DatasetLibraryPage() {
                               <td style={{ ...cell, color: deltaColor(k, d), fontWeight: 600 }}>
                                 {d == null ? '—' : `${d > 0 ? '+' : ''}${d}${unit}`}
                               </td>
-                              <td style={{ ...cell, color: trendColor(c.trend?.[k]) }}>{c.trend?.[k] ?? '—'}</td>
+                              <td style={{ ...cell, color: trendColor(c.trend?.[k]) }}>{trendLabel(c.trend?.[k])}</td>
                             </tr>
                           );
                         })}

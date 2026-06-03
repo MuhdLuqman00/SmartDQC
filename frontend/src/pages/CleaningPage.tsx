@@ -8,13 +8,15 @@ import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
 import { SessionGuard } from '../components/SessionGuard';
 import { RagBadge, scoreToRag } from '../components/RagBadge';
+import { translateIssue } from '../lib/issueCatalog';
 
 const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000';
 
-interface Issue { description: string; severity: 'critical' | 'warning' | 'info'; count: number; }
+interface Issue { code?: string; description: string; severity: 'critical' | 'warning' | 'info'; count: number; field?: string; pct?: number; }
+interface Rule { code?: string; description: string; }
 
 export function CleaningPage() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { cacheId, filename, cleanStats, qualityScore } = useSession();
   const nav = useNavigate();
 
@@ -24,7 +26,13 @@ export function CleaningPage() {
   const score  = Number(stats?.quality_score ?? qualityScore) || 0;
   const removed = Math.max(0, before - after);
   const removedPct = before > 0 ? (removed / before) * 100 : 0;
-  const rules: string[] = Array.isArray(stats?.rules_applied) ? (stats!.rules_applied as string[]) : [];
+  // Prefer the localisable `rules` (code + description); fall back to the
+  // legacy `rules_applied` string[] for older cached sessions.
+  const rules: Rule[] = Array.isArray(stats?.rules)
+    ? (stats!.rules as Rule[])
+    : Array.isArray(stats?.rules_applied)
+      ? (stats!.rules_applied as string[]).map(d => ({ description: d }))
+      : [];
   const issues: Issue[] = Array.isArray(stats?.top_issues) ? (stats!.top_issues as Issue[]) : [];
 
   const card: React.CSSProperties = {
@@ -89,7 +97,7 @@ export function CleaningPage() {
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{filename}</div>
             </div>
             <div style={{ flex: 1 }} />
-            <RagBadge rag={scoreToRag(score)} />
+            <RagBadge rag={scoreToRag(score)} lang={lang} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18 }}>
             {[
@@ -129,12 +137,12 @@ export function CleaningPage() {
               <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{t('No rules recorded.', 'Tiada peraturan direkodkan.')}</div>
             ) : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {rules.map(r => (
-                  <span key={r} style={{
+                {rules.map((r, i) => (
+                  <span key={r.code ?? r.description ?? i} style={{
                     fontSize: 12, background: 'var(--info-bg)', border: '1px solid var(--primary-light)',
                     borderRadius: 'var(--radius-pill)', padding: '5px 12px', color: 'var(--primary-light)', fontWeight: 600,
                   }}>
-                    {r}
+                    {translateIssue(r, lang)}
                   </span>
                 ))}
               </div>
@@ -155,7 +163,7 @@ export function CleaningPage() {
                   width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
                   background: iss.severity === 'critical' ? 'var(--danger)' : iss.severity === 'warning' ? 'var(--warning)' : 'var(--info)',
                 }} />
-                <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{iss.description}</span>
+                <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{translateIssue(iss, lang)}</span>
                 <span className="mono" style={{ fontSize: 12, color: 'var(--text-muted)' }}>{Number(iss.count).toLocaleString()}</span>
               </div>
             ))}

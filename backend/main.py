@@ -499,12 +499,18 @@ def _summarise_cleaning(stats: dict, rows_before: int, rows_after: int) -> dict:
         label = key.replace("_", " ").strip().capitalize()
         pct = (val / rows_before * 100) if rows_before else 0
         severity = "critical" if pct >= 10 else "warning" if pct >= 1 else "info"
-        issues.append({"description": label, "severity": severity, "count": val})
+        # `code` is the raw stat key (e.g. "dropped_duplicate_ic") so the
+        # frontend can localise via a bilingual catalog. `description` stays
+        # the English label for back-compat (exports, cached data, fallback).
+        issues.append({"code": key, "description": label, "severity": severity, "count": val})
 
     issues.sort(key=lambda i: i["count"], reverse=True)
     return {
         "quality_score": score,
+        # `rules_applied` keeps its original string[] shape for back-compat.
+        # `rules` is the additive, localisable parallel (code + English label).
         "rules_applied": [i["description"] for i in issues],
+        "rules": [{"code": i["code"], "description": i["description"]} for i in issues],
         "top_issues": issues[:5],
     }
 
@@ -1560,6 +1566,11 @@ async def quality_check_endpoint(
         )
         col_issues.append(
             {
+                # `code` + params let the frontend localise; `description`
+                # stays as the English fallback / export string.
+                "code": "col_empty",
+                "field": c["name"],
+                "pct": np_pct,
                 "description": f"Column '{c['name']}' is {np_pct}% empty",
                 "severity": severity,
                 "count": nc,
@@ -1691,6 +1702,7 @@ async def clean_run_endpoint(
                 "quality_score": quality_score,
                 "quality_grade": quality_grade,
                 "rules_applied": summary["rules_applied"],
+                "rules": summary["rules"],
                 "top_issues": summary["top_issues"],
                 "persisted": persisted,
                 "persist_error": persist_error,
@@ -3307,8 +3319,17 @@ def _chat_append_message(
                 role=role, content=content, data_json=data_json,
             ))
             cs.updated_at = datetime.utcnow()
-            if role == "user" and cs.title == "New chat":
-                trimmed = content.strip().splitlines()[0] if content.strip() else ""
+            # Auto-title from the first user question, OR from the first AI
+            # insight when the chat is narrative-only (so it stops reading as a
+            # stack of identical "New chat" entries in the sidebar).
+            if cs.title == "New chat" and role in ("user", "narrative"):
+                first = next(
+                    (ln for ln in (content or "").splitlines() if ln.strip()), ""
+                )
+                # Strip leading markdown heading / bullet markers.
+                trimmed = first.strip().lstrip("#*->•").strip()
+                if role == "narrative":
+                    trimmed = f"AI Insight — {trimmed}" if trimmed else "AI Insight"
                 cs.title = (trimmed[:60] + "…") if len(trimmed) > 60 else (trimmed or "New chat")
             db.commit()
         finally:

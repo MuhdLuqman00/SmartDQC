@@ -325,12 +325,19 @@ export function LinkagePage() {
               }}>
                 <input type="checkbox" checked={sel} onChange={() => toggleSelect(ds.id)} style={{ marginTop: 3 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {ds.filename}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                      {ds.filename}
+                    </div>
+                    {/* Short stable id — datasets frequently share a filename. */}
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                      #{ds.id.slice(0, 6)}
+                    </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                     {ds.source_type && <span style={{ textTransform: 'uppercase', fontWeight: 600, marginRight: 6 }}>{ds.source_type}</span>}
                     {ds.row_count?.toLocaleString() ?? '—'} {t('rows', 'baris')}
+                    {ds.created_at && <> · {new Date(ds.created_at).toLocaleString()}</>}
                   </div>
                 </div>
               </label>
@@ -381,34 +388,41 @@ export function LinkagePage() {
               </span>
             </span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-            <span style={{ flex: 1 }}>{t('Name threshold:', 'Ambang nama:')}</span>
+          {/* Stack label above a full-width control so the value can never
+              abut the next grid cell's label (the `0.85DOB tolerance`
+              collision) and the row stays readable on narrow widths. */}
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+            <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+              <span>{t('Name threshold', 'Ambang nama')}</span>
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--text-secondary)' }}>
+                {settings.name_fuzzy_threshold.toFixed(2)}
+              </span>
+            </span>
             <input
               type="range" min={0.5} max={0.95} step={0.01}
               value={settings.name_fuzzy_threshold}
               onChange={e => setSettings(s => ({ ...s, name_fuzzy_threshold: parseFloat(e.target.value) }))}
-              style={{ flex: 1, accentColor: 'var(--status-good)' }}
+              style={{ width: '100%', accentColor: 'var(--status-good)' }}
             />
-            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, minWidth: 36, textAlign: 'right' }}>
-              {settings.name_fuzzy_threshold.toFixed(2)}
-            </span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-            <span style={{ flex: 1 }}>{t('DOB tolerance (days):', 'Toleransi tarikh lahir (hari):')}</span>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+            <span>{t('DOB tolerance (days)', 'Toleransi tarikh lahir (hari)')}</span>
             <input
               type="number" min={0} max={7} step={1}
               value={settings.dob_tolerance_days}
               onChange={e => setSettings(s => ({ ...s, dob_tolerance_days: Math.max(0, Math.min(7, parseInt(e.target.value || '0', 10))) }))}
-              style={{ width: 50, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 12, color: 'var(--text-primary)' }}
+              style={{ width: 80, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, color: 'var(--text-primary)' }}
             />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-            <Filter size={13} style={{ color: 'var(--text-muted)' }} />
-            <span style={{ flex: 1 }}>{t('Min confidence:', 'Keyakinan min:')}</span>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Filter size={13} style={{ color: 'var(--text-muted)' }} />
+              {t('Min confidence', 'Keyakinan min')}
+            </span>
             <select
               value={settings.min_confidence}
               onChange={e => setSettings(s => ({ ...s, min_confidence: parseFloat(e.target.value) }))}
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 12, color: 'var(--text-primary)' }}
+              style={{ width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, color: 'var(--text-primary)' }}
             >
               <option value={0.0}>{t('Show all', 'Tunjuk semua')}</option>
               <option value={0.6}>0.60+</option>
