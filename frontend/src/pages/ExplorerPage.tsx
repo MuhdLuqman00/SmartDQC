@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Download, Search } from 'lucide-react';
+import { Download, Search, Pencil } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
@@ -125,10 +125,10 @@ export function ExplorerPage() {
           </a>
         </div>
 
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+        <div id="explorer-edit-hint" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           {editable
-            ? t('Double-click a cell to edit. Enter saves, Esc cancels.',
-                'Klik dua kali sel untuk menyunting. Enter simpan, Esc batal.')
+            ? t('Double-click a cell — or focus it and press Enter — to edit. Enter saves, Esc cancels.',
+                'Klik dua kali sel — atau fokus dan tekan Enter — untuk menyunting. Enter simpan, Esc batal.')
             : t('Clear the search to enable editing.',
                 'Kosongkan carian untuk membolehkan suntingan.')}
         </div>
@@ -185,12 +185,23 @@ export function ExplorerPage() {
                       return (
                         <td
                           key={c}
+                          className={`explorer-cell${editable && !isEditing ? ' editable' : ''}`}
+                          tabIndex={editable && !isEditing ? 0 : undefined}
+                          aria-describedby={editable && !isEditing ? 'explorer-edit-hint' : undefined}
                           onDoubleClick={() => {
                             if (!editable) return;
                             setEditing({ rowIdx: absIdx, col: c });
                             setEditValue(row[c] == null ? '' : String(row[c]));
                           }}
-                          style={{ padding: '9px 14px', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', cursor: editable ? 'cell' : 'default' }}
+                          onKeyDown={e => {
+                            if (!editable || isEditing) return;
+                            if (e.key === 'Enter' || e.key === 'F2') {
+                              e.preventDefault();
+                              setEditing({ rowIdx: absIdx, col: c });
+                              setEditValue(row[c] == null ? '' : String(row[c]));
+                            }
+                          }}
+                          style={{ padding: '9px 14px', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}
                         >
                           {isEditing ? (
                             <input
@@ -206,9 +217,12 @@ export function ExplorerPage() {
                               style={{ width: 120, padding: '2px 6px', fontSize: 12, fontFamily: 'var(--font-mono)', border: '1px solid var(--kkm-blue)', borderRadius: 4, background: 'var(--surface)', color: 'var(--text-primary)' }}
                             />
                           ) : (
-                            row[c] == null
-                              ? <span style={{ color: 'var(--text-muted)' }}>—</span>
-                              : String(row[c])
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              {row[c] == null
+                                ? <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                : String(row[c])}
+                              {editable && <Pencil className="edit-icon" size={11} style={{ color: 'var(--kkm-sky)' }} aria-hidden />}
+                            </span>
                           )}
                         </td>
                       );

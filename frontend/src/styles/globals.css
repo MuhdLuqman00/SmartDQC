@@ -183,6 +183,25 @@ input, select, textarea { font-family: inherit; }
 }
 [data-theme="dark"] .kkm-keyline::after { background: var(--accent); }
 
+/* ── Explorer editable cells ────────────────────────────────────────────────
+   Make the inline-edit affordance discoverable (a hover/focus pencil + cell
+   highlight) and keyboard-reachable (focusable cell with a visible ring). */
+.explorer-cell { position: relative; }
+.explorer-cell.editable { cursor: cell; }
+.explorer-cell.editable:hover { background: var(--surface-3); }
+.explorer-cell.editable:focus-visible {
+  outline: 2px solid var(--kkm-sky);
+  outline-offset: -2px;
+  background: var(--surface-3);
+}
+.explorer-cell .edit-icon {
+  opacity: 0;
+  transition: opacity var(--transition);
+  pointer-events: none;
+}
+.explorer-cell.editable:hover .edit-icon,
+.explorer-cell.editable:focus-visible .edit-icon { opacity: 0.65; }
+
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

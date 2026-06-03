@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Lock, User as UserIcon, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -11,42 +11,75 @@ export function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [fieldErr, setFieldErr] = useState<{ username?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
+  const userRef = useRef<HTMLInputElement>(null);
+  const passRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(''); setLoading(true);
+    /* Field-level validation first: empty fields get an inline message and
+       focus moves to the first offender (rather than relying on the native
+       required-bubble, which the form suppresses via noValidate). */
+    const errs: { username?: string; password?: string } = {};
+    if (!username.trim()) errs.username = t('Username is required.', 'Nama pengguna diperlukan.');
+    if (!password) errs.password = t('Password is required.', 'Kata laluan diperlukan.');
+    if (errs.username || errs.password) {
+      setFieldErr(errs);
+      (errs.username ? userRef : passRef).current?.focus();
+      return;
+    }
+    setFieldErr({}); setError(''); setLoading(true);
     try {
       await login(username, password);
       nav('/', { replace: true });
     } catch {
       setError(t('Invalid username or password.', 'Nama pengguna atau kata laluan tidak sah.'));
+      userRef.current?.focus();
     } finally { setLoading(false); }
   };
 
-  const field = (icon: React.ReactNode, props: React.InputHTMLAttributes<HTMLInputElement>, label: string) => (
-    <div>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 7 }}>
-        {label}
-      </label>
-      <div style={{ position: 'relative' }}>
-        <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
-          {icon}
-        </span>
-        <input
-          {...props}
-          style={{
-            width: '100%', padding: '12px 14px 12px 40px',
-            background: 'var(--surface-2)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-btn)', color: 'var(--text-primary)',
-            fontSize: 14, outline: 'none', transition: 'border-color var(--transition), box-shadow var(--transition)',
-          }}
-          onFocus={e => { e.target.style.borderColor = 'var(--primary-light)'; e.target.style.boxShadow = 'var(--glow-accent)'; }}
-          onBlur={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.boxShadow = 'none'; }}
-        />
+  const field = (
+    icon: React.ReactNode,
+    props: React.InputHTMLAttributes<HTMLInputElement>,
+    label: string,
+    opts: { id: string; error?: string; inputRef?: React.RefObject<HTMLInputElement> },
+  ) => {
+    const errId = `${opts.id}-error`;
+    return (
+      <div>
+        <label htmlFor={opts.id} style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 7 }}>
+          {label}
+        </label>
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
+            {icon}
+          </span>
+          <input
+            {...props}
+            id={opts.id}
+            ref={opts.inputRef}
+            aria-invalid={!!opts.error}
+            aria-describedby={opts.error ? errId : undefined}
+            style={{
+              width: '100%', padding: '12px 14px 12px 40px',
+              background: 'var(--surface-2)',
+              border: `1px solid ${opts.error ? 'var(--danger)' : 'var(--border)'}`,
+              borderRadius: 'var(--radius-btn)', color: 'var(--text-primary)',
+              fontSize: 14, outline: 'none', transition: 'border-color var(--transition), box-shadow var(--transition)',
+            }}
+            onFocus={e => { e.target.style.borderColor = 'var(--primary-light)'; e.target.style.boxShadow = 'var(--glow-accent)'; }}
+            onBlur={e => { e.target.style.borderColor = opts.error ? 'var(--danger)' : 'var(--border)'; e.target.style.boxShadow = 'none'; }}
+          />
+        </div>
+        {opts.error && (
+          <div id={errId} style={{ fontSize: 12, fontWeight: 600, color: 'var(--danger)', marginTop: 6 }}>
+            {opts.error}
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--bg)' }}>
@@ -130,16 +163,18 @@ export function LoginPage() {
             {t('Enter your credentials to access the system.', 'Masukkan maklumat akaun anda untuk akses sistem.')}
           </p>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {field(<UserIcon size={15} />, {
-              type: 'text', value: username, onChange: e => setUsername(e.target.value),
+              type: 'text', value: username,
+              onChange: e => { setUsername(e.target.value); if (fieldErr.username) setFieldErr(f => ({ ...f, username: undefined })); },
               placeholder: t('Enter username', 'Masukkan nama pengguna'), required: true, autoComplete: 'username',
-            }, t('Username', 'Nama Pengguna'))}
+            }, t('Username', 'Nama Pengguna'), { id: 'login-username', error: fieldErr.username, inputRef: userRef })}
 
             {field(<Lock size={15} />, {
-              type: 'password', value: password, onChange: e => setPassword(e.target.value),
+              type: 'password', value: password,
+              onChange: e => { setPassword(e.target.value); if (fieldErr.password) setFieldErr(f => ({ ...f, password: undefined })); },
               placeholder: '••••••••', required: true, autoComplete: 'current-password',
-            }, t('Password', 'Kata Laluan'))}
+            }, t('Password', 'Kata Laluan'), { id: 'login-password', error: fieldErr.password, inputRef: passRef })}
 
             {error && (
               <div role="alert" style={{

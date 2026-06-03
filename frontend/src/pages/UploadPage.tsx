@@ -1,13 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
-import { Upload, CheckCircle2, AlertCircle, ChevronRight, ChevronLeft, RefreshCw } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, ChevronRight, ChevronLeft, ChevronDown, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
 import { RagBadge, scoreToRag } from '../components/RagBadge';
 import { persistWarning } from '../lib/persistWarning';
 import { translateIssue } from '../lib/issueCatalog';
+import { suggestFix } from '../lib/issueFix';
 
 /* ── Step types ──────────────────────────────────────────────────────── */
 
@@ -110,9 +111,11 @@ export function UploadPage() {
   /* Step 2 state */
   const [mapping, setMapping] = useState<MappingRow[]>([]);
   const [availableFields, setAvailableFields] = useState<string[]>([]);
+  const [onlyNeedsReview, setOnlyNeedsReview] = useState(false);
 
   /* Step 3 state */
   const [qualityCheck, setQualityCheck] = useState<{ score: number; issues: Issue[] } | null>(null);
+  const [expandedIssue, setExpandedIssue] = useState<number | null>(null);
 
   /* Step 4 state */
   const [cleanStats, setCleanStats] = useState<CleanStats | null>(null);
@@ -257,6 +260,11 @@ export function UploadPage() {
   /* ── Nav helpers ────────────────────────────────────────────────────── */
 
   const confidenceColor = (c: number) => c >= 0.8 ? 'var(--success)' : c >= 0.5 ? 'var(--warning)' : 'var(--danger)';
+
+  /* "Needs review" = an actual mapping (non-empty field) under 80% confidence.
+     Deliberately-ignored columns are NOT flagged (consistent with the neutral
+     dot from WS1). Drives the filter toggle + count on the mapping table. */
+  const needsReview = (m: MappingRow) => m.standard_field !== '' && m.confidence < 0.8;
 
   /* ── Render ─────────────────────────────────────────────────────────── */
 
@@ -432,20 +440,66 @@ export function UploadPage() {
             </div>
           )}
 
+          {(() => {
+            const reviewCount = mapping.filter(needsReview).length;
+            const visible = mapping
+              .map((row, idx) => ({ row, idx }))
+              .filter(({ row }) => !onlyNeedsReview || needsReview(row));
+            return (
+          <>
+          {/* Filter toolbar — jump straight to the mappings that need a human check. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setOnlyNeedsReview(v => !v)}
+              /* Stay enabled while pressed so the user can always toggle back —
+                 even after fixing the last flagged column drops the count to 0. */
+              disabled={reviewCount === 0 && !onlyNeedsReview}
+              aria-pressed={onlyNeedsReview}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: onlyNeedsReview ? 'var(--warning-bg)' : 'var(--surface-2)',
+                border: `1px solid ${onlyNeedsReview ? 'var(--warning)' : 'var(--border)'}`,
+                borderRadius: 'var(--radius-pill)', padding: '5px 12px',
+                fontSize: 12, fontWeight: 600,
+                color: (reviewCount === 0 && !onlyNeedsReview) ? 'var(--text-muted)' : onlyNeedsReview ? 'var(--warning)' : 'var(--text-secondary)',
+                cursor: (reviewCount === 0 && !onlyNeedsReview) ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <AlertCircle size={13} />
+              {onlyNeedsReview
+                ? t('Showing needs-review', 'Menunjukkan perlu disemak')
+                : t('Needs review (<80%)', 'Perlu disemak (<80%)')}
+              <span style={{ fontFamily: 'var(--font-mono)' }}>{reviewCount}</span>
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {t(`Showing ${visible.length} of ${mapping.length}`, `Menunjukkan ${visible.length} daripada ${mapping.length}`)}
+            </span>
+          </div>
+
           <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ maxHeight: 420, overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                <tr style={{ background: 'var(--surface-2)' }}>
                   {[t('Raw Column', 'Lajur Asal'), t('Standard Field', 'Medan Standard'), t('Confidence', 'Keyakinan')].map(h => (
-                    <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                    <th key={h} style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {mapping.map((row, i) => (
-                  <tr key={row.raw_column} style={{ borderBottom: i < mapping.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                {visible.length === 0 && (
+                  <tr>
+                    <td colSpan={3} style={{ padding: '24px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
+                      {t('No columns need review — every mapping is at or above 80%.',
+                         'Tiada lajur perlu disemak — setiap pemetaan 80% ke atas.')}
+                    </td>
+                  </tr>
+                )}
+                {visible.map(({ row, idx: i }, pos) => (
+                  <tr key={row.raw_column} style={{ borderBottom: pos < visible.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <td style={{ padding: '10px 14px', fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
                       {row.raw_column}
                     </td>
@@ -496,7 +550,11 @@ export function UploadPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
+          </>
+            );
+          })()}
 
           {error && <div style={{ marginTop: 12, color: 'var(--danger)', fontSize: 13 }}>{error}</div>}
 
@@ -553,16 +611,54 @@ export function UploadPage() {
             </div>
           </div>
 
-          {qualityCheck.issues.slice(0, 5).map((issue, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '10px 0', borderBottom: i < qualityCheck.issues.slice(0, 5).length - 1 ? '1px solid var(--border)' : 'none',
-            }}>
-              <AlertCircle size={15} style={{ color: issue.severity === 'critical' ? 'var(--danger)' : 'var(--warning)', flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 13 }}>{translateIssue(issue, lang)}</span>
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{Number(issue.count).toLocaleString()}</span>
-            </div>
-          ))}
+          {qualityCheck.issues.slice(0, 5).map((issue, i, arr) => {
+            const open = expandedIssue === i;
+            const fix = suggestFix(issue, lang);
+            const scope = [
+              t(`${Number(issue.count).toLocaleString()} rows affected`, `${Number(issue.count).toLocaleString()} baris terjejas`),
+              issue.field ? t(`column “${issue.field}”`, `lajur “${issue.field}”`) : null,
+              issue.pct != null ? `${issue.pct}% ${t('empty', 'kosong')}` : null,
+            ].filter(Boolean).join(' · ');
+            const panelId = `qc-issue-${i}`;
+            return (
+              <div key={i} style={{ borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedIssue(open ? null : i)}
+                  aria-expanded={open}
+                  aria-controls={panelId}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 0', background: 'none', border: 'none', cursor: 'pointer',
+                    textAlign: 'left', color: 'var(--text-primary)',
+                  }}
+                >
+                  <AlertCircle size={15} style={{ color: issue.severity === 'critical' ? 'var(--danger)' : 'var(--warning)', flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 13 }}>{translateIssue(issue, lang)}</span>
+                  <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{Number(issue.count).toLocaleString()}</span>
+                  <ChevronDown size={15} style={{ color: 'var(--text-muted)', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--transition)' }} />
+                </button>
+                {open && (
+                  <div id={panelId} style={{ padding: '0 0 12px 25px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 3 }}>
+                        {t('Affected', 'Terjejas')}
+                      </div>
+                      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{scope}</div>
+                    </div>
+                    {fix && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 3 }}>
+                          {t('Suggested fix', 'Cadangan tindakan')}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.55 }}>{fix}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {error && <div style={{ marginTop: 12, color: 'var(--danger)', fontSize: 13 }}>{error}</div>}
 
