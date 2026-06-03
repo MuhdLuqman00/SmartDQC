@@ -93,7 +93,7 @@ export function DatasetLibraryPage() {
             </button>
           )}
           <button onClick={handleDelete} disabled={deleting}
-            style={{ background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
+            style={{ background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: 6, padding: '7px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
             {deleting ? t('Deleting…', 'Sedang memadam…') : t('Delete selected', 'Padam dipilih')}
           </button>
           <button onClick={() => setSelected(new Set())} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>

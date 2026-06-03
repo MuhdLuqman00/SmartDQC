@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, X, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
@@ -526,13 +526,39 @@ export function DashboardPage() {
       {blocks && (() => {
         const trendEntry = catalogByHome('dashboard').find(e => e.shape === 'trend_records');
         const b = trendEntry ? blocks[trendEntry.key] : undefined;
-        if (!trendEntry || !isTrendRecordsBlock(b)) return null;
+        if (trendEntry && isTrendRecordsBlock(b)) {
+          return (
+            <TrendLineCard
+              title={lang === 'en' ? trendEntry.titleEn : trendEntry.titleBm}
+              data={b}
+              lang={lang}
+            />
+          );
+        }
+        // Designed empty state instead of a silent gap / bare "—".
         return (
-          <TrendLineCard
-            title={lang === 'en' ? trendEntry.titleEn : trendEntry.titleBm}
-            data={b}
-            lang={lang}
-          />
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
+            padding: '20px 22px', display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 'var(--radius-sm)', flexShrink: 0,
+              background: 'var(--surface-2)', color: 'var(--text-muted)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <TrendingUp size={18} />
+            </div>
+            <div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
+                {t('Indicator trend by year', 'Trend penunjuk mengikut tahun')}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                {t('Not enough data yet — needs ≥2 measurement years to plot a trend.',
+                   'Data belum mencukupi — perlukan ≥2 tahun pengukuran untuk memaparkan trend.')}
+              </div>
+            </div>
+          </div>
         );
       })()}
 

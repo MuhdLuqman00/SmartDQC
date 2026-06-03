@@ -96,8 +96,10 @@ export function RankBars({
         {sorted.map((r, i) => {
           const status: RankStatus = r.status ?? 'neutral';
           const pct = Math.max(2, Math.min(100, ((r.value ?? 0) / max) * 100));
+          // Mute zero-value rows so genuine outliers stand out in long lists.
+          const isZero = (r.value ?? 0) === 0;
           return (
-            <div key={`${r.label}-${i}`} style={{ marginBottom: 12 }}>
+            <div key={`${r.label}-${i}`} style={{ marginBottom: 12, opacity: isZero ? 0.45 : 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 5 }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '62%' }}>{r.label}</span>
                 <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0 }}>

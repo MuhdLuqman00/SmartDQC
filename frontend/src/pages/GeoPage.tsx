@@ -17,6 +17,7 @@ import {
   isScatterBlock,
 } from '../lib/chartCatalog';
 import { formatGroupLabel, GroupLabelKey } from '../lib/labels';
+import { formatRange } from '../lib/formatNumber';
 
 // ── KPI types ─────────────────────────────────────────────────────────────────
 
@@ -250,9 +251,18 @@ function HistogramPanel({ title, block }: { title: string; block: HistogramBlock
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)' }}>
       <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{title}</div>
-      <ResponsiveContainer width="100%" height={160}>
+      <ResponsiveContainer width="100%" height={176}>
         <BarChart data={block.data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-          <XAxis dataKey="range" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} interval={Math.max(1, Math.floor(block.data.length / 8))} />
+          <XAxis
+            dataKey="range"
+            tick={{ fontSize: 9, fill: 'var(--text-muted)' }}
+            interval={block.data.length > 6 ? Math.ceil(block.data.length / 6) - 1 : 0}
+            tickFormatter={formatRange}
+            angle={-30}
+            textAnchor="end"
+            height={42}
+            tickLine={false}
+          />
           <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} allowDecimals={false} />
           <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
           <Bar dataKey="count" fill="var(--status-good)" radius={[2, 2, 0, 0]} />

@@ -1,7 +1,44 @@
 import React, { useEffect, useState } from 'react';
-import { Download } from 'lucide-react';
+import { Download, Copy, Check } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
+
+/* Audit details are dominated by long cache_id/chat_id strings. Shorten any
+   id-like token to first6…last4 for readability; a copy button yields the
+   full original, and the title attribute shows it on hover. */
+function shortenIds(s: string): string {
+  return s.replace(/([A-Za-z0-9_-]{16,})/g, m => `${m.slice(0, 6)}…${m.slice(-4)}`);
+}
+
+function DetailCell({ text }: { text: string | null }) {
+  const { t } = useLang();
+  const [copied, setCopied] = useState(false);
+  if (!text) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+  const copy = () => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    }).catch(() => { /* clipboard unavailable — title still shows full value */ });
+  };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, maxWidth: 360 }}>
+      <span title={text} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {shortenIds(text)}
+      </span>
+      <button
+        onClick={copy}
+        aria-label={t('Copy details', 'Salin butiran')}
+        title={t('Copy', 'Salin')}
+        style={{
+          background: 'none', border: 'none', padding: 2, cursor: 'pointer',
+          color: copied ? 'var(--success)' : 'var(--text-muted)', display: 'flex', flexShrink: 0,
+        }}
+      >
+        {copied ? <Check size={13} /> : <Copy size={13} />}
+      </button>
+    </span>
+  );
+}
 
 interface AuditEntry {
   id: number;
@@ -96,10 +133,10 @@ export function AuditPage() {
                     </span>
                   </td>
                   <td style={{ padding: '10px 16px', color: 'var(--text-secondary)', maxWidth: 360 }}>
-                    {entry.detail ?? '—'}
+                    <DetailCell text={entry.detail} />
                   </td>
-                  <td style={{ padding: '10px 16px', color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {entry.username ?? '—'}
+                  <td style={{ padding: '10px 16px', color: entry.username ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: 500 }}>
+                    {entry.username ?? t('System', 'Sistem')}
                   </td>
                 </tr>
               ))}

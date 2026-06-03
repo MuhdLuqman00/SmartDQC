@@ -1,6 +1,7 @@
 import React, { useId, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { ChartTooltip } from './ChartTooltip';
+import { formatCompact } from '../lib/formatNumber';
 
 export function ColumnHistogram({ values, bins = 12 }: { values: number[]; bins?: number }) {
   const gradId = useId().replace(/:/g, '');
@@ -45,7 +46,10 @@ export function ColumnHistogram({ values, bins = 12 }: { values: number[]; bins?
         <XAxis
           dataKey="label"
           tick={{ fontSize: 10, fill: 'var(--chart-axis)' }}
-          interval={0}
+          // Thin ticks (~8 max) and compact-format them so huge IC numbers
+          // don't collide; the tooltip header keeps the full bucket value.
+          interval={data.length > 8 ? Math.ceil(data.length / 8) - 1 : 0}
+          tickFormatter={(v) => formatCompact(Number(v))}
           angle={-30}
           textAnchor="end"
           height={50}
