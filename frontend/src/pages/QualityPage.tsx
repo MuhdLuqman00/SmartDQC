@@ -32,7 +32,9 @@ const DIM_ORDER = Object.keys(DIM_LABELS);
 
 function ScoreGauge({ score }: { score: number }) {
   const rag = scoreToRag(score);
-  const color = rag === 'good' ? 'var(--success)' : rag === 'warning' ? 'var(--warning)' : 'var(--danger)';
+  // WS7: gauge arc is a status grade (matches the RagBadge shown for the same
+  // score) → dataviz status family, not the alert family.
+  const color = rag === 'good' ? 'var(--status-good)' : rag === 'warning' ? 'var(--status-watch)' : 'var(--status-critical)';
   const r = 54, circ = 2 * Math.PI * r;
   const dash = (score / 100) * circ;
   return (

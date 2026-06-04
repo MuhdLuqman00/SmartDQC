@@ -178,13 +178,16 @@ export function DatasetLibraryPage() {
                 m === 'quality_score'
                   ? (ds.quality_score == null ? '—' : Number(ds.quality_score).toFixed(1))
                   : (ds.indicators?.[m] == null ? '—' : `${(Number(ds.indicators[m]) * 100).toFixed(1)}%`);
+              // WS7: a worsening metric/trend is a "bad-but-not-broken" status
+              // signal, not an error — red stays reserved for errors/destructive,
+              // so the negative side uses --warning (accessible as text).
               const deltaColor = (m: string, v: number | null) => {
                 if (v == null || v === 0) return 'var(--text-muted)';
                 const good = m === 'quality_score' ? v > 0 : v < 0;
-                return good ? 'var(--kkm-teal)' : 'var(--danger)';
+                return good ? 'var(--kkm-teal)' : 'var(--warning)';
               };
               const trendColor = (tr?: string) =>
-                tr === 'improving' ? 'var(--kkm-teal)' : tr === 'worsening' ? 'var(--danger)' : 'var(--text-muted)';
+                tr === 'improving' ? 'var(--kkm-teal)' : tr === 'worsening' ? 'var(--warning)' : 'var(--text-muted)';
               const trendLabel = (tr?: string) =>
                 tr === 'improving' ? t('Improving', 'Bertambah baik')
                   : tr === 'worsening' ? t('Worsening', 'Bertambah buruk')

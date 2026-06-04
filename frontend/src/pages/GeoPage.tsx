@@ -105,12 +105,6 @@ const STATUS_VAR: Record<Status, string> = {
   critical: 'var(--status-critical)',
   neutral:  'var(--status-neutral)',
 };
-const STATUS_BG: Record<Status, string> = {
-  good:     'var(--status-good-bg)',
-  watch:    'var(--status-watch-bg)',
-  critical: 'var(--status-critical-bg)',
-  neutral:  'var(--surface-2)',
-};
 
 function ragToStatus(rag?: string): Status {
   const v = (rag || '').toLowerCase();
@@ -158,11 +152,18 @@ function StatusBadge({ status }: { status: Status }) {
     : status === 'watch' ? t('Moderate', 'Sederhana')
     : status === 'critical' ? t('Critical', 'Kritikal')
     : t('No data', 'Tiada data');
+  // Grades (good/watch/critical) are solid status-hue pills with navy text
+  // (≥5.5:1). "No data" is an absence, not a grade — render it as a muted tint
+  // pill with secondary text (≥6.8:1) so it neither fails contrast nor reads as
+  // a status colour.
+  const isGrade = status !== 'neutral';
   return (
     <span style={{
       display: 'inline-block', padding: '2px 10px', borderRadius: 6,
-      fontSize: 11, fontWeight: 700, background: STATUS_BG[status],
-      color: STATUS_VAR[status], border: `0.5px solid ${STATUS_VAR[status]}`,
+      fontSize: 11, fontWeight: 700,
+      background: isGrade ? STATUS_VAR[status] : 'var(--surface-2)',
+      color: isGrade ? 'var(--primary-dark)' : 'var(--text-secondary)',
+      border: isGrade ? 'none' : '0.5px solid var(--border)',
       letterSpacing: '0.04em',
     }}>
       {label}
@@ -567,7 +568,7 @@ export function GeoPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{t('Target Trajectory (2027)', 'Trajektori Sasaran (2027)')}</div>
               {offTrack > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_BG.critical, color: STATUS_VAR.critical }}>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_VAR.critical, color: 'var(--primary-dark)' }}>
                   {offTrack} {t('off track', 'tidak menuju sasaran')}
                 </span>
               )}
@@ -591,7 +592,7 @@ export function GeoPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                           <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{n.district}</span>
                           <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{KPI_LABEL[n.kpi_key] ?? n.kpi_key}</span>
-                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_BG[st], color: STATUS_VAR[st] }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_VAR[st], color: 'var(--primary-dark)' }}>
                             {lang === 'en' ? n.trajectory_status : n.trajectory_status_bm}
                           </span>
                           <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>

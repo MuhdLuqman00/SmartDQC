@@ -419,8 +419,11 @@ export function DashboardPage() {
           <div className="kpi-indicator-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(${indicators.length}, minmax(0, 1fr))` }}>
             {indicators.map((ind, i) => {
               const sel = ind.key === selectedIndicator;
-              const ragColor = ind.rag === 'Green' ? 'var(--success)'
-                : ind.rag === 'Amber' ? 'var(--warning)' : 'var(--danger)';
+              // WS7: this fills the value-vs-target bar — a status grade, so it
+              // uses the dataviz status family in lock-step with RAG_VAR above
+              // (the same file's ranked bars) and the RagBadge beside it.
+              const ragColor = ind.rag === 'Green' ? 'var(--status-good)'
+                : ind.rag === 'Amber' ? 'var(--status-watch)' : 'var(--status-critical)';
               /* Map the dashboard's Green/Amber/Red enum to the app-wide
                  RagBadge level so the status reads bilingually (GOOD/BAIK,
                  MODERATE/SEDERHANA, CRITICAL/KRITIKAL) — never a raw "Green". */
@@ -480,11 +483,15 @@ export function DashboardPage() {
                     <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${fillPct}%`, background: ragColor, borderRadius: 3 }} />
                     <div style={{ position: 'absolute', left: `${TICK}%`, top: -1, height: 8, width: 1.5, background: 'var(--text-muted)' }} />
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {t('Target', 'Sasaran')} {target.toFixed(0)}%
                     {ind.who_target != null ? ` · WHO ${Number(ind.who_target).toFixed(0)}%` : ''}
                   </div>
-                  <div style={{ fontSize: 11.5, fontWeight: 600, color: isBad ? 'var(--danger)' : 'var(--success)' }}>
+                  {/* WS7: an off-target delta is a "bad-but-not-broken" watch
+                      signal, not a system error — red is reserved for errors, so
+                      the negative side uses --warning (also ≥4.5:1 as text, which
+                      the coral fill token is not). */}
+                  <div style={{ fontSize: 12, fontWeight: 600, color: isBad ? 'var(--warning)' : 'var(--success)' }}>
                     {ind.gap > 0 ? '▲' : '▼'} {Math.abs(Number(ind.gap)).toFixed(2)} {t('vs target', 'vs sasaran')}
                   </div>
                 </button>

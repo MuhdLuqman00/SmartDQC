@@ -108,14 +108,14 @@ export function LoginPage() {
           <div style={{
             width: 46, height: 46, borderRadius: 13, background: 'var(--gradient-gold)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 19, color: '#0F1B2F',
+            fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20, color: '#0F1B2F',
             boxShadow: '0 8px 22px rgba(200,150,46,0.4)',
           }}>S</div>
           <div>
             <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.8)', marginBottom: 3 }}>
               {t('Ministry of Health Malaysia', 'Kementerian Kesihatan Malaysia')}
             </div>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17 }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16 }}>
               Smart<span style={{ color: 'var(--accent-soft)' }}>DQC</span>
             </div>
           </div>

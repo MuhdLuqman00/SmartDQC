@@ -770,8 +770,8 @@ export function UploadPage() {
           {persistWarn && (
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: 10,
-              background: 'var(--danger-bg, #fde8e8)', color: 'var(--danger, #b91c1c)',
-              border: '1px solid var(--danger, #b91c1c)', borderRadius: 8,
+              background: 'var(--danger-bg)', color: 'var(--danger)',
+              border: '1px solid var(--danger)', borderRadius: 8,
               padding: '12px 16px', marginBottom: 24, fontSize: 14, fontWeight: 600,
             }}>
               <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />

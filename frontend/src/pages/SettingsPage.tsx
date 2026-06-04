@@ -411,7 +411,7 @@ export function SettingsPage() {
                     <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                       {grp === 'npan' ? t('NPAN National Targets', 'Sasaran Kebangsaan NPAN') : t('WHO Global Targets', 'Sasaran Global WHO')}
                     </span>
-                    <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '2px 8px', background: isCustom ? 'var(--warning-bg, #fef3c7)' : 'var(--success-bg)', color: isCustom ? 'var(--warning, #b45309)' : 'var(--success)' }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '2px 8px', background: isCustom ? 'var(--warning-bg)' : 'var(--success-bg)', color: isCustom ? 'var(--warning)' : 'var(--success)' }}>
                       {t(provenance.en, provenance.bm)}
                     </span>
                   </div>
