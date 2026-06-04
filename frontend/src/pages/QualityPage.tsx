@@ -124,10 +124,10 @@ export function QualityPage() {
 
   return (
     <SessionGuard>
-      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      <div className="quality-layout" style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* Left: score gauge */}
-        <div style={{
+        <div className="quality-left-col" style={{
           flex: '0 0 260px', background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 'var(--radius-card)', padding: '28px 20px',
           boxShadow: 'var(--shadow-card)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,

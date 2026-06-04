@@ -389,7 +389,7 @@ export function ReportsPage() {
 
       <section>
         {sectionHeader('Ministerial Reports', 'Laporan Kementerian')}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
           {generators.map(renderGenerator)}
         </div>
       </section>

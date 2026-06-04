@@ -213,6 +213,38 @@ input, select, textarea { font-family: inherit; }
   outline-offset: -2px;
 }
 
+/* ── WS6 responsive breakpoints ─────────────────────────────────────────────
+   Plain CSS media queries for layout-structure changes that inline styles
+   can't handle. All widths intentional: 768px = tablet fold, 480px = phone. */
+
+/* Tablet (≤768px) */
+@media (max-width: 768px) {
+  /* Login: stack brand panel above the form */
+  .login-layout { flex-direction: column !important; }
+  .login-brand-panel {
+    flex: none !important;
+    min-height: 220px;
+    padding: 32px !important;
+  }
+
+  /* Dashboard: indicator status board wraps to 2×2 */
+  .kpi-indicator-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  /* Re-apply left border only on odd segments so 2×2 rows stay divided */
+  .kpi-indicator-grid .kpi-seg:nth-child(odd) { border-left: none !important; }
+
+  /* Quality: left gauge+breakdown column stacks above the right column */
+  .quality-layout { flex-wrap: wrap !important; }
+  .quality-left-col { flex: 1 1 100% !important; }
+}
+
+/* Phone (≤480px) */
+@media (max-width: 480px) {
+  /* Dashboard: single column on very narrow screens */
+  .kpi-indicator-grid { grid-template-columns: 1fr !important; }
+  /* Compact brand panel on small phones */
+  .login-brand-panel { min-height: 160px; }
+}
+
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

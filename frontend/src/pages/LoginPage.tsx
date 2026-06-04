@@ -82,10 +82,10 @@ export function LoginPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--bg)' }}>
+    <div className="login-layout" style={{ minHeight: '100vh', display: 'flex', background: 'var(--bg)' }}>
 
       {/* Brand panel */}
-      <div style={{
+      <div className="login-brand-panel" style={{
         flex: '0 0 46%', background: 'var(--gradient-brand)', color: '#fff',
         padding: '52px 60px', display: 'flex', flexDirection: 'column',
         justifyContent: 'space-between', position: 'relative', overflow: 'hidden',

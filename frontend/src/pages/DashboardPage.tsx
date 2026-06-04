@@ -416,7 +416,7 @@ export function DashboardPage() {
             {t('No indicator data — run cleaning first.', 'Tiada data penunjuk — jalankan pembersihan dahulu.')}
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${indicators.length}, minmax(0, 1fr))` }}>
+          <div className="kpi-indicator-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(${indicators.length}, minmax(0, 1fr))` }}>
             {indicators.map((ind, i) => {
               const sel = ind.key === selectedIndicator;
               const ragColor = ind.rag === 'Green' ? 'var(--success)'
