@@ -94,6 +94,16 @@ export function LoginPage() {
           position: 'absolute', top: -120, right: -120, width: 380, height: 380,
           borderRadius: '50%', background: 'radial-gradient(circle, rgba(200,150,46,0.18), transparent 70%)',
         }} />
+        {/* Songket-inspired gold lattice — a subtle KKM signature filling the
+            lower panel (audit 01). Decorative only: aria-hidden, faded upward,
+            non-interactive; a crosshatch echo of the gold keyline motif. */}
+        <div aria-hidden style={{
+          position: 'absolute', left: 0, right: 0, bottom: 0, height: '44%',
+          backgroundImage: 'repeating-linear-gradient(135deg, rgba(200,150,46,0.07) 0 1.5px, transparent 1.5px 15px), repeating-linear-gradient(45deg, rgba(200,150,46,0.07) 0 1.5px, transparent 1.5px 15px)',
+          maskImage: 'linear-gradient(to top, #000, transparent)',
+          WebkitMaskImage: 'linear-gradient(to top, #000, transparent)',
+          pointerEvents: 'none',
+        }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
           <div style={{
             width: 46, height: 46, borderRadius: 13, background: 'var(--gradient-gold)',

@@ -15,6 +15,20 @@ import { InlineEmpty } from '../components/InlineEmpty';
 interface Issue { code?: string; description: string; severity: 'critical' | 'warning' | 'info'; count: number; samples?: string[]; field?: string; pct?: number; }
 interface Rule { code?: string; description: string; }
 interface AnomalyRow { row_index: number; columns: string[]; suggestion: string; }
+interface DimEntry { score: number; max: number; }
+
+/* 7-dimension quality breakdown labels (bilingual). Keys + order match the
+   backend rubric in eda/quality.py and export/charts.py. */
+const DIM_LABELS: Record<string, { en: string; bm: string }> = {
+  field_coverage:   { en: 'Field Coverage',        bm: 'Liputan Medan' },
+  ic_validity:      { en: 'IC Validity',           bm: 'Kesahihan IC' },
+  missing_critical: { en: 'Critical Completeness', bm: 'Kelengkapan Kritikal' },
+  duplicates:       { en: 'Uniqueness',            bm: 'Keunikan' },
+  bmi_consistency:  { en: 'BMI Consistency',       bm: 'Konsistensi BMI' },
+  spelling:         { en: 'Spelling',              bm: 'Ejaan' },
+  zscore_coverage:  { en: 'Z-score Coverage',      bm: 'Liputan Z-skor' },
+};
+const DIM_ORDER = Object.keys(DIM_LABELS);
 
 function ScoreGauge({ score }: { score: number }) {
   const rag = scoreToRag(score);
@@ -59,6 +73,9 @@ export function QualityPage() {
      endpoint Geo uses. Lazy + tolerant of missing columns: if the dataset
      has no WHO z-score classes, the donuts simply render nothing. */
   const [blocks, setBlocks] = useState<Record<string, unknown> | null>(null);
+  /* 7-dimension breakdown — fetched by cache_id so it resolves for reopened
+     sessions too (the score-only /clean/run response doesn't carry it). */
+  const [breakdown, setBreakdown] = useState<Record<string, DimEntry> | null>(null);
 
   useEffect(() => {
     if (!cacheId) return;
@@ -69,6 +86,9 @@ export function QualityPage() {
     api.get<Record<string, unknown>>(`/charts/blocks?cache_id=${cacheId}`)
       .then(r => { if (!cancelled) setBlocks(r.data); })
       .catch(() => { if (!cancelled) setBlocks(null); });
+    api.get<{ breakdown?: Record<string, DimEntry> }>(`/quality/breakdown?cache_id=${cacheId}`)
+      .then(r => { if (!cancelled) setBreakdown(r.data?.breakdown ?? null); })
+      .catch(() => { if (!cancelled) setBreakdown(null); });
     return () => { cancelled = true; };
   }, [cacheId]);
 
@@ -129,6 +149,36 @@ export function QualityPage() {
                   <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{row.value}</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Quality by dimension — fills the left-column void with the real
+              reason behind the score (audit 08). Bar length conveys strength;
+              the score/max text means colour is never the sole signal. */}
+          {breakdown && DIM_ORDER.some(k => breakdown[k]) && (
+            <div style={{ width: '100%', marginTop: 4 }}>
+              <div className="kkm-keyline" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 16 }}>
+                {t('Quality by dimension', 'Kualiti mengikut dimensi')}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+                {DIM_ORDER.map(key => {
+                  const d = breakdown[key];
+                  if (!d || typeof d.score !== 'number' || !d.max) return null;
+                  const pct = Math.max(0, Math.min(100, Math.round((d.score / d.max) * 100)));
+                  const lab = DIM_LABELS[key];
+                  return (
+                    <div key={key}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{lang === 'en' ? lab.en : lab.bm}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{d.score}/{d.max}</span>
+                      </div>
+                      <div style={{ height: 6, background: 'var(--surface-3)', borderRadius: 3, overflow: 'hidden' }} aria-hidden>
+                        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--kkm-sky)', borderRadius: 3 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

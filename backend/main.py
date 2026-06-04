@@ -2386,6 +2386,30 @@ async def charts_blocks_endpoint(
     return JSONResponse(content=json_safe(blocks))
 
 
+@app.get("/quality/breakdown")
+async def quality_breakdown_endpoint(
+    cache_id: str = Query(..., description="UUID from /clean/run or /join/run"),
+):
+    """Return the 7-dimension quality-score breakdown for a cached dataset.
+
+    Exposes the data_quality_score block that compute_quality_score already
+    produces inside run_eda_auto, so the Quality page can render a
+    by-dimension breakdown by cache_id (including for reopened sessions)
+    without the breakdown having to ride along in every /clean/run response.
+    Mirrors the /charts/blocks recompute-from-cache pattern.
+    """
+    entry = _cache_get(cache_id)
+    if entry is None:
+        raise HTTPException(404, "cache_id not found — run /clean/run first or check the UUID")
+    source_type = ((entry.get("stats") or {}).get("source_type")) or "myvass"
+    try:
+        dq = run_eda_auto(entry["df"], source_type).get("data_quality_score") or {}
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("Quality breakdown computation failed for %s: %s", cache_id, exc)
+        raise HTTPException(500, f"Quality breakdown computation failed: {exc}")
+    return JSONResponse(content=json_safe(dq))
+
+
 class TrajectoryRequest(BaseModel):
     historical_snapshots: list[dict]
     current_breakdown: list[dict] = []

@@ -273,8 +273,13 @@ export function UploadPage() {
       <StepIndicator current={step} />
 
       {/* ── STEP 1 ── */}
+      {/* Two-column workspace: the upload card stays the single primary action;
+          a subordinate guide rail fills the empty canvas with real guidance
+          (audit 02). Wraps to a single column on narrow widths. */}
       {step === 1 && (
+        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{
+          flex: '1 1 440px', minWidth: 0,
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 'var(--radius-card)', padding: '32px',
           boxShadow: 'var(--shadow-card)',
@@ -373,6 +378,68 @@ export function UploadPage() {
               {t('Next', 'Seterusnya')} <ChevronRight size={16} />
             </button>
           </div>
+        </div>
+
+        {/* Subordinate guide rail — orientation, not a second action. */}
+        <aside style={{
+          flex: '1 1 230px', minWidth: 0,
+          background: 'var(--surface-2)', border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-card)', padding: '24px 22px',
+          display: 'flex', flexDirection: 'column', gap: 20,
+        }}>
+          <div className="kkm-keyline" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+            {t("What you'll need", 'Apa yang diperlukan')}
+          </div>
+
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
+              {t('Accepted formats', 'Format diterima')}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['CSV', 'XLSX', 'XLS'].map(f => (
+                <span key={f} className="mono" style={{
+                  fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)',
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-pill)', padding: '2px 9px',
+                }}>{f}</span>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>
+              {t('Recognised schemas', 'Skema dikenali')}
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              {t('MyVASS, NCDC and KPM are detected automatically — pick one manually only if detection is wrong.',
+                 'MyVASS, NCDC dan KPM dikesan secara automatik — pilih secara manual hanya jika pengesanan salah.')}
+            </p>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
+              {t('What happens next', 'Langkah seterusnya')}
+            </div>
+            <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {[
+                t('Upload & detect', 'Muat naik & kesan'),
+                t('Map columns', 'Peta lajur'),
+                t('Quality check', 'Semak kualiti'),
+                t('Clean & download', 'Bersih & muat turun'),
+              ].map((label, i) => (
+                <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                  <span className="mono" style={{
+                    width: 18, height: 18, flexShrink: 0, borderRadius: '50%',
+                    background: 'var(--surface)', border: '1px solid var(--border)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, color: 'var(--text-muted)',
+                  }}>{i + 1}</span>
+                  {label}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </aside>
         </div>
       )}
 
