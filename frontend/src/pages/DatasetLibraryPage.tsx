@@ -7,6 +7,7 @@ import { useSession } from '../context/SessionContext';
 import { RagBadge, scoreToRag } from '../components/RagBadge';
 import { EmptyState } from '../components/EmptyState';
 import { JoinWizardModal } from '../components/JoinWizardModal';
+import { formatMytDateTime, formatMytDate } from '../lib/formatMyt';
 
 interface Dataset {
   id: string;
@@ -27,6 +28,7 @@ export function DatasetLibraryPage() {
   const [comparing, setComparing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [comparison, setComparison] = useState<Record<string, unknown> | null>(null);
+  const [compareError, setCompareError] = useState<string | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
 
   useEffect(() => {
@@ -45,9 +47,14 @@ export function DatasetLibraryPage() {
   const handleCompare = async () => {
     if (selected.size < 2) return;
     setComparing(true);
+    setCompareError(null);
     try {
       const r = await api.post('/datasets/compare', { dataset_ids: Array.from(selected) });
       setComparison(r.data);
+    } catch {
+      // Previously there was no catch, so any backend failure was swallowed
+      // and the modal silently never opened. Surface it instead.
+      setCompareError(t('Comparison failed. Please try again.', 'Perbandingan gagal. Sila cuba lagi.'));
     } finally { setComparing(false); }
   };
 
@@ -102,6 +109,12 @@ export function DatasetLibraryPage() {
         </div>
       )}
 
+      {compareError && (
+        <div role="alert" style={{ marginBottom: 20, background: 'var(--danger-bg)', border: '1px solid var(--danger)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--danger)' }}>
+          {compareError}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
         {datasets.map(ds => {
           const isSelected = selected.has(ds.id);
@@ -131,7 +144,7 @@ export function DatasetLibraryPage() {
                 </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-                {ds.row_count?.toLocaleString() ?? '—'} {t('rows', 'baris')} · {new Date(ds.created_at).toLocaleString()}
+                {ds.row_count?.toLocaleString() ?? '—'} {t('rows', 'baris')} · {formatMytDateTime(ds.created_at, lang)}
               </div>
               {ds.quality_score != null && <RagBadge rag={scoreToRag(ds.quality_score)} lang={lang} />}
               <div style={{ marginTop: 14 }}>
@@ -203,7 +216,7 @@ export function DatasetLibraryPage() {
                     <tbody>
                       {c.datasets.map((ds, i) => (
                         <tr key={ds.dataset_id ?? i}>
-                          <td style={cell}>{ds.name || ds.dataset_id}<div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{(ds.created_at || '').slice(0, 10)}</div></td>
+                          <td style={cell}>{ds.name || ds.dataset_id}<div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{formatMytDate(ds.created_at, lang)}</div></td>
                           {METRICS.map(([k]) => <td key={k} style={cell}>{num(k, ds)}</td>)}
                         </tr>
                       ))}

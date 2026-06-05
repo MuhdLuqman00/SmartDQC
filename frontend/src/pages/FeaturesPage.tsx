@@ -60,7 +60,7 @@ const FEATURES: Feat[] = [
     to: '/ai', techEn: 'Ask in Malay or English', techBm: 'Tanya dalam Bahasa Melayu atau Inggeris' },
   { n: 14, icon: <Link2 size={18} />,      en: 'Entity Resolution', bm: 'Resolusi Entiti',
     descEn: 'Cross-dataset record linkage by IC number.', descBm: 'Pautan rekod merentas dataset mengikut nombor IC.',
-    to: '/datasets', techEn: 'Links records across datasets by IC', techBm: 'Pautkan rekod merentas dataset mengikut IC' },
+    to: '/linkage', techEn: 'Links records across datasets by IC', techBm: 'Pautkan rekod merentas dataset mengikut IC' },
   { n: 15, icon: <FileText size={18} />,   en: 'Automated Reports', bm: 'Laporan Automatik',
     descEn: 'KKM-branded PDF & PPTX with charts.', descBm: 'PDF & PPTX berjenama KKM dengan carta.',
     to: '/reports', techEn: 'KKM-branded PDF and PowerPoint', techBm: 'PDF dan PowerPoint berjenama KKM' },

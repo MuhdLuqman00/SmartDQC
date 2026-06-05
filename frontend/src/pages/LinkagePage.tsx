@@ -6,6 +6,7 @@ import {
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { EmptyState } from '../components/EmptyState';
+import { formatMytDateTime } from '../lib/formatMyt';
 
 interface Dataset {
   id: string;
@@ -187,7 +188,7 @@ function Sparkline({ timeline, width = 96, height = 28 }: {
 }
 
 export function LinkagePage() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [datasetsLoading, setDatasetsLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -337,7 +338,7 @@ export function LinkagePage() {
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                     {ds.source_type && <span style={{ textTransform: 'uppercase', fontWeight: 600, marginRight: 6 }}>{ds.source_type}</span>}
                     {ds.row_count?.toLocaleString() ?? '—'} {t('rows', 'baris')}
-                    {ds.created_at && <> · {new Date(ds.created_at).toLocaleString()}</>}
+                    {ds.created_at && <> · {formatMytDateTime(ds.created_at, lang)}</>}
                   </div>
                 </div>
               </label>

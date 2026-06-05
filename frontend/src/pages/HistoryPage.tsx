@@ -6,6 +6,7 @@ import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
 import { RagBadge, scoreToRag } from '../components/RagBadge';
 import { EmptyState } from '../components/EmptyState';
+import { formatMytDateTime, formatMytMonth } from '../lib/formatMyt';
 
 interface Session {
   cache_id: string; filename: string; source_type: string | null;
@@ -13,12 +14,12 @@ interface Session {
 }
 
 function groupByMonth(sessions: Session[], lang: 'en' | 'bm'): Record<string, Session[]> {
-  const locale = lang === 'bm' ? 'ms-MY' : 'en-US';
+  // Group by Malaysia-time month so a session uploaded just before/after
+  // midnight UTC falls under the correct MYT month (formatMytMonth also
+  // returns a localised "Unknown" for undated rows).
   const groups: Record<string, Session[]> = {};
   for (const s of sessions) {
-    const key = s.created_at
-      ? new Date(s.created_at).toLocaleDateString(locale, { year: 'numeric', month: 'long' })
-      : (lang === 'bm' ? 'Tidak diketahui' : 'Unknown');
+    const key = formatMytMonth(s.created_at, lang);
     (groups[key] ||= []).push(s);
   }
   return groups;
@@ -70,7 +71,7 @@ export function HistoryPage() {
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                     {s.source_type && <span style={{ textTransform: 'uppercase', fontWeight: 600, marginRight: 8 }}>{s.source_type}</span>}
                     {Number(s.row_count).toLocaleString()} {t('rows', 'baris')}
-                    {s.created_at && <> · {new Date(s.created_at).toLocaleString()}</>}
+                    {s.created_at && <> · {formatMytDateTime(s.created_at, lang)}</>}
                   </div>
                 </div>
                 <RagBadge rag={scoreToRag(s.quality_score)} lang={lang} />

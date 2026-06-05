@@ -16,6 +16,7 @@ import {
   isTrendRecordsBlock,
 } from '../lib/chartCatalog';
 import { formatGroupLabel } from '../lib/labels';
+import { formatMytDate } from '../lib/formatMyt';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -348,7 +349,7 @@ export function DashboardPage() {
         </select>
         {summary?.latest_session && (
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            {t('Last updated', 'Dikemaskini')}: {new Date(summary.latest_session.created_at).toLocaleDateString()}
+            {t('Last updated', 'Dikemaskini')}: {formatMytDate(summary.latest_session.created_at, lang)}
           </span>
         )}
       </div>

@@ -6,6 +6,7 @@ import { useSession } from '../context/SessionContext';
 import { SessionGuard } from '../components/SessionGuard';
 import { RagBadge, scoreToRag } from '../components/RagBadge';
 import { NarrativePanel, NarrativeRaw } from '../components/NarrativePanel';
+import { formatMytDate } from '../lib/formatMyt';
 
 interface Message {
   id: string;
@@ -92,21 +93,26 @@ export function AIPage() {
     }
   }, [setChatId]);
 
-  // On dataset mount: refresh chat list, auto-load the most recent.
+  // On dataset mount: refresh chat list and hydrate the active chat.
   useEffect(() => {
     if (!cacheId) { setChats([]); setMessages([]); return; }
     let cancelled = false;
     (async () => {
       const list = await reloadChats();
       if (cancelled) return;
-      if (list.length && !chatId) {
-        loadChat(list[0].id);
-      } else if (!list.length) {
-        setMessages([]);
-      }
+      if (!list.length) { setMessages([]); return; }
+      // Always hydrate a chat on mount. `chatId` lives in SessionContext
+      // (above this route) so it survives an AIPage unmount, but `messages`
+      // is local state that resets on remount — so without re-hydrating, a
+      // revisit (or a cold reopen the next day) would show the active chat
+      // EMPTY even though it's in the list. Prefer the persisted chatId when
+      // it's still present; otherwise fall back to the most recent chat.
+      const target = (chatId && list.some(c => c.id === chatId)) ? chatId : list[0].id;
+      loadChat(target);
     })();
     return () => { cancelled = true; };
-    // chatId intentionally excluded — we only auto-load on dataset change.
+    // chatId read at mount only — we re-run on dataset change, not on every
+    // chatId update (loadChat/newChat handle in-session switches directly).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheId]);
 
@@ -313,7 +319,7 @@ export function AIPage() {
                         </div>
                       </div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3, marginLeft: 18 }}>
-                        {c.message_count} {t('msgs', 'mesej')} · {new Date(c.updated_at).toLocaleDateString()}
+                        {c.message_count} {t('msgs', 'mesej')} · {formatMytDate(c.updated_at, lang)}
                       </div>
                       <button
                         onClick={e => { e.stopPropagation(); deleteChat(c.id); }}

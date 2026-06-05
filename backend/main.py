@@ -3493,7 +3493,7 @@ def post_chat_message(chat_id: str, body: _ChatMessageBody, db=Depends(get_db)):
 
 # ── Multi-Dataset Comparison ─────────────────────────────────────────────────
 
-from backend.eda.compare import compare_datasets, _INDICATOR_KEYS
+from backend.eda.compare import compare_datasets
 
 
 @app.get("/datasets")
@@ -3563,47 +3563,65 @@ def _delete_datasets(db, dataset_ids: list[str]) -> dict:
 
 
 @app.post("/datasets/compare")
-async def datasets_compare(req: DatasetCompareRequest):
-    """Compare 2+ datasets side-by-side. Returns quality and indicator deltas."""
-    from backend.db.models import Dataset, AnalysisResult
-    from backend.db.init_db import SessionLocal
+async def datasets_compare(req: DatasetCompareRequest, db=Depends(get_db)):
+    """Compare 2+ datasets side-by-side. Returns quality and indicator deltas.
+
+    Quality comes from the persisted Dataset row (always present). The four
+    nutrition prevalence rates are recomputed on the fly from each dataset's
+    cached cleaned frame — the same compute_kpi_dashboard path the dashboard
+    uses — because per-dataset indicators are not persisted anywhere. A
+    dataset whose cache has been evicted still contributes its quality score;
+    its indicators degrade to empty (rendered as "—") rather than failing the
+    whole comparison.
+
+    Prior bug: this queried a non-existent AnalysisResult.dataset_id column
+    (500) and read a result_json shape that is never written, so the modal
+    always came back empty.
+    """
+    from backend.db.models import Dataset
 
     if len(req.dataset_ids) < 2:
         raise HTTPException(400, "Provide at least 2 dataset_ids.")
 
+    targets = _load_kpi_targets(db)
     summaries = []
-    with SessionLocal() as db:
-        for ds_id in req.dataset_ids:
-            ds = db.get(Dataset, ds_id)
-            if ds is None:
-                continue
-            ar = (
-                db.query(AnalysisResult)
-                .filter(AnalysisResult.dataset_id == ds_id)
-                .order_by(AnalysisResult.created_at.desc())
-                .first()
-            )
-            quality_score = None
-            indicators = {}
-            if ar and ar.result_json:
-                rj = ar.result_json
-                quality_score = rj.get("quality", {}).get("overall_score")
-                ind = rj.get("indicators", {})
-                for k in _INDICATOR_KEYS:
-                    if k in ind:
-                        indicators[k] = ind[k]
-            summaries.append(
-                {
-                    "dataset_id": ds_id,
-                    "source_type": ds.source_type or "unknown",
-                    "quality_score": quality_score,
-                    "indicators": indicators,
-                    "name": ds.name,
-                    "created_at": ds.created_at.isoformat(),
-                }
-            )
+    for ds_id in req.dataset_ids:
+        ds = db.get(Dataset, ds_id)
+        if ds is None:
+            continue
+        indicators: dict[str, float] = {}
+        entry = _cache_get(ds_id)
+        if entry is not None and entry.get("df") is not None:
+            try:
+                kpi = compute_kpi_dashboard(
+                    entry["df"], npan=targets["npan"], who=targets["who"]
+                )
+                # kpi indicator `key` is the flag (stunting/wasting/…) and
+                # `actual` is a percentage; compare_datasets expects fractions
+                # keyed by `<flag>_rate` (stunting_rate, wasting_rate, …).
+                for i in kpi.get("indicators", []):
+                    key, actual = i.get("key"), i.get("actual")
+                    if key and actual is not None:
+                        indicators[f"{key}_rate"] = float(actual) / 100.0
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning("compare: indicator compute failed for %s: %s", ds_id, exc)
+        summaries.append(
+            {
+                "dataset_id":    ds_id,
+                "name":          ds.name,
+                "source_type":   ds.source_type or "unknown",
+                "quality_score": _coerce_float(ds.quality_score),
+                "indicators":    indicators,
+                "created_at":    ds.created_at.isoformat() if ds.created_at else None,
+            }
+        )
 
-    return compare_datasets(summaries)
+    # Oldest → latest so compare_datasets' "latest vs earliest" deltas and the
+    # OLS trend read chronologically regardless of selection order. ISO UTC
+    # strings sort lexically == chronologically.
+    summaries.sort(key=lambda s: s["created_at"] or "")
+
+    return JSONResponse(content=json_safe(compare_datasets(summaries)))
 
 
 @app.post("/datasets/delete")

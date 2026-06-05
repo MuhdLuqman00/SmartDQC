@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Download, Copy, Check } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
+import { formatMytDateTime } from '../lib/formatMyt';
 
 /* Audit details are dominated by long cache_id/chat_id strings. Shorten any
    id-like token to first6…last4 for readability; a copy button yields the
@@ -53,7 +54,7 @@ interface AuditEntry {
 const PAGE_SIZE = 50;
 
 export function AuditPage() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [filtered, setFiltered] = useState<AuditEntry[]>([]);
   const [actionFilter, setActionFilter] = useState('');
@@ -125,7 +126,7 @@ export function AuditPage() {
               {pageRows.map((entry, i) => (
                 <tr key={entry.id} style={{ borderBottom: i < pageRows.length - 1 ? '1px solid var(--border)' : 'none', background: i % 2 === 0 ? 'transparent' : 'var(--surface-2)' }}>
                   <td style={{ padding: '10px 16px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                    {new Date(entry.created_at).toLocaleString()}
+                    {formatMytDateTime(entry.created_at, lang)}
                   </td>
                   <td style={{ padding: '10px 16px' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 8px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
