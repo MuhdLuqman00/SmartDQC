@@ -99,7 +99,9 @@ export function FeaturesPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{
           width: 40, height: 40, borderRadius: 11, flexShrink: 0,
-          background: 'var(--info-bg)', color: 'var(--primary-light)',
+          /* --kkm-sky reads clearly on the info tint in BOTH themes; the old
+             --primary-light blended into --info-bg's dark-blue in dark mode. */
+          background: 'var(--info-bg)', color: 'var(--kkm-sky)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           {f.icon}

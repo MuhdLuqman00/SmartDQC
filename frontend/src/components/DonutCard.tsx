@@ -28,8 +28,13 @@ const STATUS_RULES: Array<{ test: RegExp; color: string }> = [
   { test: /severe|critical|underweight|overweight|obes|stunted|wasted/i, color: 'var(--status-critical)' },
 ];
 
-const CHART_VARS = ['--chart-1', '--chart-2', '--chart-3', '--chart-4', '--chart-5', '--chart-6'] as const;
-const CHART_DEEP_VARS = ['--chart-1-deep', '--chart-2-deep', '--chart-3-deep', '--chart-4-deep', '--chart-5-deep', '--chart-6-deep'] as const;
+/* Perceptually-spaced rotation (D2): the natural 1→6 order put navy (--chart-1)
+   next to sky (--chart-2), which are near-identical blues in dark mode — a
+   2-slice donut (e.g. gender) rendered as two blues. Reordered so adjacent
+   slices jump hue family: navy → gold → teal → terracotta → periwinkle → sky.
+   Deep variants stay paired with their base so each slice's gradient is intact. */
+const CHART_VARS = ['--chart-1', '--chart-4', '--chart-3', '--chart-5', '--chart-6', '--chart-2'] as const;
+const CHART_DEEP_VARS = ['--chart-1-deep', '--chart-4-deep', '--chart-3-deep', '--chart-5-deep', '--chart-6-deep', '--chart-2-deep'] as const;
 
 function isStatusLabel(label: string): boolean {
   return STATUS_RULES.some(r => r.test.test(label));

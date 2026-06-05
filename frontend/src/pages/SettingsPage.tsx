@@ -453,7 +453,7 @@ export function SettingsPage() {
                                 aria-invalid={invalid}
                                 value={Number.isFinite(val) ? val : ''}
                                 onChange={e => setKpiValue(grp, ind.key, parseFloat(e.target.value))}
-                                style={{ width: 80, textAlign: 'right', padding: '6px 8px', fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--kkm-blue)', background: 'var(--surface)', border: `1px solid ${invalid ? 'var(--danger)' : 'var(--border)'}`, borderRadius: 6 }}
+                                style={{ width: 80, textAlign: 'right', padding: '6px 8px', fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy)', background: 'var(--surface)', border: `1px solid ${invalid ? 'var(--danger)' : 'var(--border)'}`, borderRadius: 6 }}
                               />
                               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>%</span>
                             </div>

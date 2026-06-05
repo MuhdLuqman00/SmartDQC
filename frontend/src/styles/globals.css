@@ -212,6 +212,16 @@ input, select, textarea { font-family: inherit; }
   outline: 2px solid var(--kkm-sky);
   outline-offset: -2px;
 }
+/* Selected segment (D1) — bg + gold index rail. Kept in CSS (not inline) so
+   dark mode can dial the gold back: at full strength the rail read too hot on
+   the navy surface and competed with the value text. */
+.kpi-seg[aria-pressed="true"] {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent-strong);
+}
+[data-theme="dark"] .kpi-seg[aria-pressed="true"] {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent-strong) 62%, transparent);
+}
 
 /* ── WS6 responsive breakpoints ─────────────────────────────────────────────
    Plain CSS media queries for layout-structure changes that inline styles

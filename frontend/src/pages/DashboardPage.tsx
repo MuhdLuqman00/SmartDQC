@@ -451,12 +451,13 @@ export function DashboardPage() {
                   aria-pressed={sel}
                   style={{
                     textAlign: 'left', cursor: 'pointer', color: 'inherit',
-                    /* Leave unselected background unset so the .kpi-seg:hover
-                       class can own hover feedback (inline would outrank it). */
-                    background: sel ? 'var(--surface-2)' : undefined,
+                    /* Background AND the selected gold index-rail are intentionally
+                       NOT set inline — they live in globals.css under
+                       .kpi-seg:hover and .kpi-seg[aria-pressed="true"] so the
+                       hover/selected feedback wins and, in dark mode, the gold
+                       rail can be dialled back (full-strength gold read too hot). */
                     border: 'none',
                     borderLeft: i === 0 ? 'none' : '1px solid var(--border)',
-                    boxShadow: sel ? 'inset 3px 0 0 var(--accent-strong)' : 'none',
                     padding: '12px 18px 16px',
                     display: 'flex', flexDirection: 'column', gap: 7,
                   }}
@@ -484,7 +485,7 @@ export function DashboardPage() {
                     <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${fillPct}%`, background: ragColor, borderRadius: 3 }} />
                     <div style={{ position: 'absolute', left: `${TICK}%`, top: -1, height: 8, width: 1.5, background: 'var(--text-muted)' }} />
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                     {t('Target', 'Sasaran')} {target.toFixed(0)}%
                     {ind.who_target != null ? ` · WHO ${Number(ind.who_target).toFixed(0)}%` : ''}
                   </div>
