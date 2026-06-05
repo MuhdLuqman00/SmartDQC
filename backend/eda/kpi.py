@@ -328,6 +328,7 @@ def compute_trajectory_narratives(
     current_breakdown: list[dict],
     npan: dict[str, float] | None = None,
     atrisk_tolerance: float = 0.30,
+    target_year: int | None = None,
 ) -> list[dict]:
     """
     Compute per-district, per-KPI trajectory narratives from historical indicator snapshots.
@@ -337,11 +338,15 @@ def compute_trajectory_narratives(
             [{district, period, stunting_rate, wasting_rate, underweight_rate, overweight_rate}, ...]
         current_breakdown: district_breakdown from compute_kpi_dashboard (reserved for enrichment)
         npan: optional NPAN target overrides (kpi_key -> target rate). When given,
-            the "will meet by 2027" forecast tracks the edited target so the
+            the "will meet by <year>" forecast tracks the edited target so the
             trajectory text agrees with the dashboard cards.
+        target_year: admin-configured forecast target year. When None, defaults
+            to the latest data year + the default horizon, so the displayed year
+            tracks the data instead of a hard-coded literal that silently rots.
 
     Returns:
-        list of dicts, one per (district, kpi_key) with >=2 data points.
+        list of dicts, one per (district, kpi_key) with >=2 data points. Each
+        carries `forecast_year` (the projected calendar year).
     """
     if not historical_snapshots:
         return []
@@ -349,6 +354,20 @@ def compute_trajectory_narratives(
     npan_t, _ = _resolve_targets(npan, None)
 
     df = pd.DataFrame(historical_snapshots)
+
+    # "period" values are measurement years (tahun_ukur). Resolve the forecast
+    # target year ONCE so the label is consistent across districts: the
+    # configured target_year, else the latest data year + default horizon.
+    # Always a forward projection (guard a configured past/near year).
+    def _yr(v):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
+    _years = [y for y in (_yr(p) for p in df["period"]) if y is not None]
+    last_year = max(_years) if _years else int(pd.Timestamp.now().year)
+    effective_year = int(target_year) if target_year else last_year + _FORECAST_PERIODS
+    effective_year = max(effective_year, last_year + 1)
 
     kpi_rate_cols = {
         "stunting_rate":    "stunting_rate",
@@ -360,7 +379,13 @@ def compute_trajectory_narratives(
     results = []
     for district, grp in df.groupby("district"):
         grp = grp.sort_values("period").reset_index(drop=True)
-        x   = np.arange(len(grp), dtype=float)
+        # Fit on the actual years when available so projecting to effective_year
+        # is exact and gap-safe; fall back to an index fit only if the periods
+        # don't parse as years.
+        grp_years = [_yr(p) for p in grp["period"]]
+        use_years = all(v is not None for v in grp_years) and len(set(grp_years)) >= 2
+        x          = np.array(grp_years, dtype=float) if use_years else np.arange(len(grp), dtype=float)
+        forecast_x = float(effective_year) if use_years else (len(grp) - 1 + max(1, effective_year - last_year))
 
         for kpi_key, rate_col in kpi_rate_cols.items():
             if rate_col not in grp.columns or grp[rate_col].isna().all():
@@ -372,7 +397,7 @@ def compute_trajectory_narratives(
             coeffs        = np.polyfit(x, y, 1)
             slope         = float(coeffs[0])
             current_rate  = float(y[-1])
-            forecast_rate = slope * (len(grp) - 1 + _FORECAST_PERIODS) + float(coeffs[1])
+            forecast_rate = slope * forecast_x + float(coeffs[1])
 
             target    = npan_t[kpi_key]
             will_meet = forecast_rate <= target
@@ -381,35 +406,35 @@ def compute_trajectory_narratives(
                 status    = "On Track"
                 status_bm = "Menuju Sasaran"
                 narrative_en = (
-                    f"{district} is projected to meet the {kpi_key} target of {target}% by 2027. "
+                    f"{district} is projected to meet the {kpi_key} target of {target}% by {effective_year}. "
                     f"At the current trend ({slope:+.2f}pp/period), the rate will reach {forecast_rate:.1f}%."
                 )
                 narrative_bm = (
-                    f"{district} dijangka mencapai sasaran {kpi_key} sebanyak {target}% menjelang 2027. "
+                    f"{district} dijangka mencapai sasaran {kpi_key} sebanyak {target}% menjelang {effective_year}. "
                     f"Pada kadar semasa ({slope:+.2f} mata peratusan/tempoh), kadar akan mencapai {forecast_rate:.1f}%."
                 )
             elif forecast_rate <= target * (1 + atrisk_tolerance):
                 status    = "At Risk"
                 status_bm = "Berisiko"
                 narrative_en = (
-                    f"{district} is at risk of missing the {kpi_key} target of {target}% by 2027. "
+                    f"{district} is at risk of missing the {kpi_key} target of {target}% by {effective_year}. "
                     f"At the current trend ({slope:+.2f}pp/period), the rate is projected at "
                     f"{forecast_rate:.1f}% — {forecast_rate - target:.1f}pp above target."
                 )
                 narrative_bm = (
-                    f"{district} berisiko tidak mencapai sasaran {kpi_key} sebanyak {target}% menjelang 2027. "
+                    f"{district} berisiko tidak mencapai sasaran {kpi_key} sebanyak {target}% menjelang {effective_year}. "
                     f"Pada kadar semasa, kadar dijangka {forecast_rate:.1f}%."
                 )
             else:
                 status    = "Off Track"
                 status_bm = "Tidak Menuju Sasaran"
                 narrative_en = (
-                    f"{district} will NOT meet the {kpi_key} target of {target}% by 2027. "
+                    f"{district} will NOT meet the {kpi_key} target of {target}% by {effective_year}. "
                     f"At the current trend ({slope:+.2f}pp/period), the rate is projected at "
                     f"{forecast_rate:.1f}% — {forecast_rate - target:.1f}pp above target."
                 )
                 narrative_bm = (
-                    f"{district} TIDAK akan mencapai sasaran {kpi_key} sebanyak {target}% menjelang 2027. "
+                    f"{district} TIDAK akan mencapai sasaran {kpi_key} sebanyak {target}% menjelang {effective_year}. "
                     f"Pada kadar semasa, kadar dijangka {forecast_rate:.1f}%."
                 )
 
@@ -418,7 +443,8 @@ def compute_trajectory_narratives(
                 "kpi_key":              kpi_key,
                 "current_rate":         round(current_rate, 2),
                 "target":               target,
-                "forecast_2027":        round(forecast_rate, 2),
+                "forecast_2027":        round(forecast_rate, 2),  # rate (kept for back-compat)
+                "forecast_year":        effective_year,
                 "slope_per_period":     round(slope, 4),
                 "will_meet_target":     will_meet,
                 "trajectory_status":    status,

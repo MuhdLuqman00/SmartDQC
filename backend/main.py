@@ -2426,6 +2426,7 @@ async def kpi_trajectory(req: TrajectoryRequest, db=Depends(get_db)):
         req.historical_snapshots, req.current_breakdown,
         npan=_load_kpi_targets(db)["npan"],
         atrisk_tolerance=_rag_tolerances(db)[1],
+        target_year=_load_target_year(db),
     )
 
 
@@ -2443,7 +2444,7 @@ async def kpi_trajectory_auto(
             404, "cache_id not found — run /clean/run first or check the UUID"
         )
     snapshots = compute_district_period_snapshots(entry["df"])
-    narratives = compute_trajectory_narratives(snapshots, [], npan=_load_kpi_targets(db)["npan"], atrisk_tolerance=_rag_tolerances(db)[1])
+    narratives = compute_trajectory_narratives(snapshots, [], npan=_load_kpi_targets(db)["npan"], atrisk_tolerance=_rag_tolerances(db)[1], target_year=_load_target_year(db))
     periods = sorted({s["period"] for s in snapshots})
     return JSONResponse(content=json_safe({
         "narratives":    narratives,
@@ -4186,6 +4187,18 @@ def toggle_rule(body: dict, db=Depends(get_db)):
     return current
 
 
+def _load_target_year(db) -> int | None:
+    """Admin-configured forecast target year (Settings → KPI Targets). None →
+    auto-derive from the data (latest year + default horizon). Kept as its own
+    setting key, not folded into kpi.targets, to avoid that round-trip's
+    history of fragility."""
+    v = _get_setting("kpi.target_year", None, db)
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _kpi_targets_view(db) -> dict:
     """GET-shaped view: current values, official defaults, and per-set source
     marker (official label vs 'custom' when a value differs from the default)."""
@@ -4194,6 +4207,7 @@ def _kpi_targets_view(db) -> dict:
     return {
         "current":  current,
         "defaults": defaults,
+        "target_year": _load_target_year(db),
         "source": {
             "npan": "custom" if current["npan"] != defaults["npan"] else "npan_2021_2025",
             "who":  "custom" if current["who"]  != defaults["who"]  else "who_2025",
@@ -4230,6 +4244,19 @@ def post_kpi_targets(body: dict, user=Depends(require_admin), db=Depends(get_db)
             if not (0.0 <= fv <= 100.0):
                 raise HTTPException(status_code=422, detail=f"{grp}.{k} must be between 0 and 100")
             out[grp][k] = fv
+    # Optional forecast target year (separate key; null/empty clears → auto).
+    if "target_year" in body:
+        ty = body.get("target_year")
+        if ty is None or ty == "":
+            _set_setting("kpi.target_year", None, db)
+        else:
+            try:
+                ty_int = int(ty)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail="target_year must be an integer year")
+            if not (2020 <= ty_int <= 2100):
+                raise HTTPException(status_code=422, detail="target_year must be between 2020 and 2100")
+            _set_setting("kpi.target_year", ty_int, db)
     _set_setting("kpi.targets", out, db)
     _log_audit(
         action="settings.kpi_targets",

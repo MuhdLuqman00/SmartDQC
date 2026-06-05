@@ -65,8 +65,8 @@ const FEATURES: Feat[] = [
     descEn: 'KKM-branded PDF & PPTX with charts.', descBm: 'PDF & PPTX berjenama KKM dengan carta.',
     to: '/reports', techEn: 'KKM-branded PDF and PowerPoint', techBm: 'PDF dan PowerPoint berjenama KKM' },
   { n: 16, icon: <Target size={18} />,     en: 'Benchmarking & Targets', bm: 'Penanda Aras & Sasaran',
-    descEn: 'RAG vs NPAN/WHO targets + per-district 2027 trajectory.', descBm: 'RAG vs sasaran NPAN/WHO + trajektori 2027 setiap daerah.',
-    to: '/geo', techEn: 'Tracks progress to NPAN & WHO 2027 targets', techBm: 'Jejak kemajuan ke sasaran NPAN & WHO 2027' },
+    descEn: 'RAG vs NPAN/WHO targets + per-district target-year trajectory.', descBm: 'RAG vs sasaran NPAN/WHO + trajektori sasaran setiap daerah.',
+    to: '/geo', techEn: 'Tracks progress to NPAN & WHO targets', techBm: 'Jejak kemajuan ke sasaran NPAN & WHO' },
 ];
 
 /* Group the 16 capabilities into pipeline-ordered themes so the page stops

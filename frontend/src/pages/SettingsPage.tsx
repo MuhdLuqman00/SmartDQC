@@ -38,6 +38,7 @@ interface KpiTargets {
   current: { npan: TargetSet; who: TargetSet };
   defaults: { npan: TargetSet; who: TargetSet };
   source: { npan: string; who: string };
+  target_year: number | null;  // null → auto-derive (latest data year + horizon)
 }
 
 const KPI_LABELS: { key: string; en: string; bm: string }[] = [
@@ -169,6 +170,9 @@ export function SettingsPage() {
     }));
   };
 
+  const setKpiYear = (v: number | null) =>
+    setKpi(prev => prev && ({ ...prev, target_year: v }));
+
   const resetKpiSet = (grp: 'npan' | 'who') => {
     setKpi(prev => prev && ({
       ...prev,
@@ -178,8 +182,14 @@ export function SettingsPage() {
 
   /* True when any current target is out of range / blank — drives the inline
      error and blocks the save so a nonsensical target can't be persisted. */
-  const kpiHasError = !!kpi && (['npan', 'who'] as const).some(grp =>
-    KPI_LABELS.some(ind => !isValidTarget(kpi.current[grp][ind.key])));
+  /* target_year is valid when blank (auto) or a 4-digit year in [2020, 2100]. */
+  const kpiYearValid = !kpi || kpi.target_year == null ||
+    (Number.isInteger(kpi.target_year) && kpi.target_year >= 2020 && kpi.target_year <= 2100);
+  const kpiHasError = !!kpi && (
+    (['npan', 'who'] as const).some(grp =>
+      KPI_LABELS.some(ind => !isValidTarget(kpi.current[grp][ind.key]))) ||
+    !kpiYearValid
+  );
 
   const saveKpiTargets = async () => {
     if (!kpi || kpiHasError) return;
@@ -188,6 +198,7 @@ export function SettingsPage() {
       const r = await api.post<KpiTargets>('/settings/kpi-targets', {
         npan: kpi.current.npan,
         who: kpi.current.who,
+        target_year: kpi.target_year,
       });
       setKpi(r.data);
       setKpiSaved(true); setTimeout(() => setKpiSaved(false), 2000);
@@ -419,6 +430,38 @@ export function SettingsPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Forecast target year (E1a) — admin policy input. Blank = auto. */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
+              <div style={{ padding: '10px 20px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                {t('Forecast Target Year', 'Tahun Sasaran Unjuran')}
+              </div>
+              <div style={{ padding: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
+                    {t('Target year for the district trajectory forecast', 'Tahun sasaran untuk unjuran trajektori daerah')}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.5 }}>
+                    {t('Leave blank to auto-derive from the data (latest measurement year + 4). Projections far beyond the data are flagged as indicative in Geo & Risk.',
+                       'Biarkan kosong untuk auto-terbit daripada data (tahun pengukuran terkini + 4). Unjuran jauh melebihi data ditanda sebagai petunjuk dalam Geo & Risiko.')}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                  <input
+                    type="number" min={2020} max={2100} step={1}
+                    placeholder={t('Auto', 'Auto')}
+                    aria-invalid={!kpiYearValid}
+                    value={kpi.target_year ?? ''}
+                    onChange={e => setKpiYear(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+                    style={{ width: 92, textAlign: 'right', padding: '6px 8px', fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy)', background: 'var(--surface)', border: `1px solid ${kpiYearValid ? 'var(--border)' : 'var(--danger)'}`, borderRadius: 6 }}
+                  />
+                  {!kpiYearValid && (
+                    <span role="alert" style={{ fontSize: 10, fontWeight: 600, color: 'var(--danger)' }}>
+                      {t('Year 2020–2100', 'Tahun 2020–2100')}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
             {(['npan', 'who'] as const).map(grp => {
               const isCustom = kpi.source[grp] === 'custom';
               const officialKey = grp === 'npan' ? 'npan_2021_2025' : 'who_2025';

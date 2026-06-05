@@ -68,7 +68,8 @@ interface TrajectoryItem {
   kpi_key: string;
   current_rate: number;
   target: number;
-  forecast_2027: number;
+  forecast_2027: number;           // projected RATE (back-compat field name)
+  forecast_year: number;           // projected calendar year (configurable)
   trajectory_status: string;       // "On Track" | "At Risk" | "Off Track"
   trajectory_status_bm: string;
   narrative: { en: string; bm: string };
@@ -563,20 +564,40 @@ export function GeoPage() {
           const rows = [...traj.narratives]
             .sort((a, b) => trajRank(b.trajectory_status) - trajRank(a.trajectory_status));
           const offTrack = rows.filter(n => trajToStatus(n.trajectory_status) === 'critical').length;
+          // Forecast year is the configured target year (consistent across rows);
+          // latest data year comes from periods. The gap drives an honesty note —
+          // a projection many years out from a short trend is only indicative.
+          const forecastYear = rows.length ? rows[0].forecast_year : null;
+          const latestYear = traj.periods.length
+            ? Math.max(...traj.periods.map(p => parseInt(p, 10)).filter(Number.isFinite))
+            : null;
+          const yearsOut = (forecastYear != null && latestYear != null && Number.isFinite(latestYear))
+            ? forecastYear - latestYear : null;
           return (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)', marginTop: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{t('Target Trajectory (2027)', 'Trajektori Sasaran (2027)')}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {t('Target Trajectory', 'Trajektori Sasaran')}{forecastYear != null ? ` (${forecastYear})` : ''}
+              </div>
               {offTrack > 0 && (
                 <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_VAR.critical, color: 'var(--primary-dark)' }}>
                   {offTrack} {t('off track', 'tidak menuju sasaran')}
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, marginBottom: yearsOut != null && yearsOut >= 5 ? 8 : 14 }}>
               {t('Projected vs NPAN target per district, based on historical years.',
                  'Unjuran berbanding sasaran NPAN setiap daerah, berdasarkan tahun sejarah.')}
             </div>
+            {/* E1a honesty note: a projection many years past the latest data is
+                only indicative — say so rather than implying false precision. */}
+            {yearsOut != null && yearsOut >= 5 && (
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--warning)', flexShrink: 0 }} />
+                {t(`Projecting ${yearsOut} years beyond the latest data (${latestYear}) — treat as indicative, not a precise forecast.`,
+                   `Unjuran ${yearsOut} tahun selepas data terkini (${latestYear}) — anggap sebagai petunjuk, bukan ramalan tepat.`)}
+              </div>
+            )}
             {rows.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>
                 {t('Requires multi-year data (≥2 measurement years per district) to project a trajectory.',
