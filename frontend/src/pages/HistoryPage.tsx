@@ -9,7 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { formatMytDateTime, formatMytMonth } from '../lib/formatMyt';
 
 interface Session {
-  cache_id: string; filename: string; source_type: string | null;
+  cache_id: string; name?: string; filename: string; source_type: string | null;
   row_count: number; quality_score: number; created_at: string | null;
 }
 
@@ -63,7 +63,7 @@ export function HistoryPage() {
                 <Clock size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{s.filename}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{s.name || s.filename}</div>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
                       #{s.cache_id.slice(0, 6)}
                     </span>
@@ -77,7 +77,7 @@ export function HistoryPage() {
                 <RagBadge rag={scoreToRag(s.quality_score)} lang={lang} />
                 <button
                   onClick={() => {
-                    setSession({ cacheId: s.cache_id, filename: s.filename, sourceType: s.source_type, rowCount: s.row_count, qualityScore: s.quality_score });
+                    setSession({ cacheId: s.cache_id, filename: s.name || s.filename, sourceType: s.source_type, rowCount: s.row_count, qualityScore: s.quality_score });
                     nav('/');
                   }}
                   style={{ background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}

@@ -458,6 +458,8 @@ class MappingBody(BaseModel):
     """JSON body sent by the v2 frontend: { "raw_column": "standard_field", … }."""
 
     mapping: dict[str, str] = {}
+    # E2: optional user-chosen dataset name (defaults to the filename when blank).
+    dataset_name: Optional[str] = None
 
 
 def _resolve_cached_df(cache_id: Optional[str]) -> pd.DataFrame:
@@ -1280,6 +1282,7 @@ def _persist_session(
     row_count: int,
     result: dict,
     db,
+    name: str | None = None,
 ) -> None:
     """Upsert Dataset + Session + AnalysisResult so session data survives server restart."""
     from .db.models import Dataset, Session as _Session, AnalysisResult
@@ -1294,7 +1297,7 @@ def _persist_session(
     if ds is None:
         ds = Dataset(
             id=cache_id,
-            name=filename,
+            name=(name or "").strip() or filename,
             filename=filename,
             source_type=source_type,
             row_count=row_count,
@@ -1676,6 +1679,7 @@ async def clean_run_endpoint(
                 "issues": summary["top_issues"],
             },
             db=db,
+            name=(body.dataset_name if body else None),
         )
     except Exception as exc:  # best-effort — never fail the clean run on a DB error
         persisted = False
@@ -4041,6 +4045,7 @@ def list_sessions(db=Depends(get_db)):
     return [
         {
             "cache_id": r.id,
+            "name": r.name,
             "filename": r.filename,
             "source_type": r.source_type,
             "row_count": r.row_count or 0,

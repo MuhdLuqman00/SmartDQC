@@ -19,6 +19,8 @@ import {
 } from '../lib/chartCatalog';
 import { formatGroupLabel, GroupLabelKey } from '../lib/labels';
 import { formatRange } from '../lib/formatNumber';
+import { Maximize2, Download } from 'lucide-react';
+import { FocusOverlay } from '../components/FocusOverlay';
 
 // ── KPI types ─────────────────────────────────────────────────────────────────
 
@@ -143,6 +145,29 @@ const KPI_LABEL: Record<string, string> = {
   wasting_rate:     'Wasting',
   underweight_rate: 'Underweight',
   overweight_rate:  'Overweight',
+};
+
+/* Client-side CSV download (E1c) — builds the file from already-fetched
+   analysis data; RFC-4180 quoting so commas/quotes/newlines survive. */
+function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]): void {
+  const esc = (v: string | number) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers, ...rows].map(r => r.map(esc).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* Shared icon-button style for the panel focus/export controls. */
+const panelIconBtn: React.CSSProperties = {
+  background: 'var(--surface-2)', border: '1px solid var(--border)',
+  borderRadius: 7, padding: '5px 7px', color: 'var(--text-secondary)',
+  cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
 };
 
 // ── Small atoms ───────────────────────────────────────────────────────────────
@@ -312,6 +337,7 @@ export function GeoPage() {
   const [blocksLoading, setBlocksLoading] = useState(false);
   const [blocksError, setBlocksError] = useState(false);
   const [showAllDist, setShowAllDist] = useState(false);
+  const [trajFocus, setTrajFocus] = useState(false);
 
   const [traj, setTraj] = useState<TrajectoryResp | null>(null);
   const [trajError, setTrajError] = useState(false);
@@ -573,16 +599,60 @@ export function GeoPage() {
             : null;
           const yearsOut = (forecastYear != null && latestYear != null && Number.isFinite(latestYear))
             ? forecastYear - latestYear : null;
+          const trajTitle = `${t('Target Trajectory', 'Trajektori Sasaran')}${forecastYear != null ? ` (${forecastYear})` : ''}`;
+          const exportTrajectoryCsv = () => downloadCsv(
+            `SmartDQC_Trajectory_${forecastYear ?? 'forecast'}.csv`,
+            ['District', 'Indicator', 'Current %', 'Forecast %', 'Target %', 'Forecast Year', 'Status'],
+            rows.map(n => [
+              n.district, KPI_LABEL[n.kpi_key] ?? n.kpi_key, n.current_rate,
+              n.forecast_2027, n.target, n.forecast_year, n.trajectory_status,
+            ]),
+          );
+          // One list renderer for both the inline (capped) card and the
+          // uncapped focus overlay, so the two never drift.
+          const trajList = (capped: boolean) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(capped ? { maxHeight: 340, overflowY: 'auto' } : {}) }}>
+              {rows.map((n, i) => {
+                const st = trajToStatus(n.trajectory_status);
+                return (
+                  <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-btn)', padding: '10px 12px', background: 'var(--surface-2)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{n.district}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{KPI_LABEL[n.kpi_key] ?? n.kpi_key}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_VAR[st], color: 'var(--primary-dark)' }}>
+                        {lang === 'en' ? n.trajectory_status : n.trajectory_status_bm}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
+                        {n.current_rate}% → {n.forecast_2027}% ({t('target', 'sasaran')} {n.target}%)
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      {lang === 'en' ? n.narrative.en : n.narrative.bm}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
           return (
+          <>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)', marginTop: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>
-                {t('Target Trajectory', 'Trajektori Sasaran')}{forecastYear != null ? ` (${forecastYear})` : ''}
-              </div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{trajTitle}</div>
               {offTrack > 0 && (
                 <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_VAR.critical, color: 'var(--primary-dark)' }}>
                   {offTrack} {t('off track', 'tidak menuju sasaran')}
                 </span>
+              )}
+              {rows.length > 0 && (
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                  <button onClick={exportTrajectoryCsv} aria-label={t('Export CSV', 'Eksport CSV')} title={t('Export CSV', 'Eksport CSV')} style={panelIconBtn}>
+                    <Download size={14} />
+                  </button>
+                  <button onClick={() => setTrajFocus(true)} aria-label={t('Expand', 'Kembang')} title={t('Expand', 'Kembang')} style={panelIconBtn}>
+                    <Maximize2 size={14} />
+                  </button>
+                </div>
               )}
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, marginBottom: yearsOut != null && yearsOut >= 5 ? 8 : 14 }}>
@@ -603,32 +673,12 @@ export function GeoPage() {
                 {t('Requires multi-year data (≥2 measurement years per district) to project a trajectory.',
                    'Memerlukan data berbilang tahun (≥2 tahun pengukuran setiap daerah) untuk unjuran trajektori.')}
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 340, overflowY: 'auto' }}>
-                {rows
-                  .map((n, i) => {
-                    const st = trajToStatus(n.trajectory_status);
-                    return (
-                      <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-btn)', padding: '10px 12px', background: 'var(--surface-2)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{n.district}</span>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{KPI_LABEL[n.kpi_key] ?? n.kpi_key}</span>
-                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: STATUS_VAR[st], color: 'var(--primary-dark)' }}>
-                            {lang === 'en' ? n.trajectory_status : n.trajectory_status_bm}
-                          </span>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
-                            {n.current_rate}% → {n.forecast_2027}% ({t('target', 'sasaran')} {n.target}%)
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                          {lang === 'en' ? n.narrative.en : n.narrative.bm}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
+            ) : trajList(true)}
           </div>
+          <FocusOverlay open={trajFocus} onClose={() => setTrajFocus(false)} title={trajTitle}>
+            {trajList(false)}
+          </FocusOverlay>
+          </>
           );
         })()}
         {!traj && trajError && (

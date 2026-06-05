@@ -99,6 +99,8 @@ export function UploadPage() {
 
   /* Step 1 state */
   const [files, setFiles] = useState<File[]>([]);
+  /* E2: editable dataset name, defaulted to the uploaded file's name. */
+  const [datasetName, setDatasetName] = useState('');
   const [multiMode, setMultiMode] = useState(false);
   const [cacheId, setCacheId] = useState('');
   const [chosenType, setChosenType] = useState('auto');
@@ -125,6 +127,9 @@ export function UploadPage() {
 
   const onDrop = useCallback((accepted: File[]) => {
     setFiles(multiMode ? accepted : [accepted[0]]);
+    // Default the dataset name to the file name (single-file mode); the user
+    // can edit it before cleaning or just continue.
+    setDatasetName(!multiMode && accepted[0] ? accepted[0].name : '');
     setError('');
   }, [multiMode]);
 
@@ -233,7 +238,10 @@ export function UploadPage() {
     try {
       const mappingDict: Record<string, string> = {};
       mapping.forEach(m => { if (m.standard_field) mappingDict[m.raw_column] = m.standard_field; });
-      const r = await api.post(`/clean/run?cache_id=${cacheId}`, { mapping: mappingDict });
+      const r = await api.post(`/clean/run?cache_id=${cacheId}`, {
+        mapping: mappingDict,
+        dataset_name: datasetName.trim() || undefined,
+      });
       setCleanStats({
         rows_before: Number(r.data.rows_before) || rowCount,
         rows_after: Number(r.data.rows_after) || 0,
@@ -245,7 +253,7 @@ export function UploadPage() {
       setPersistWarn(persistWarning(r.data, lang));
       setSession({
         cacheId: r.data.cache_id,
-        filename: files[0]?.name || 'dataset',
+        filename: datasetName.trim() || files[0]?.name || 'dataset',
         sourceType: detectedType,
         rowCount: r.data.rows_after || 0,
         qualityScore: r.data.quality_score || 0,
@@ -359,6 +367,25 @@ export function UploadPage() {
               </div>
             )}
           </div>
+
+          {files.length > 0 && !multiMode && (
+            <div style={{ marginTop: 20 }}>
+              <label htmlFor="dataset-name" style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                {t('Dataset name', 'Nama dataset')}
+              </label>
+              <input
+                id="dataset-name"
+                value={datasetName}
+                onChange={e => setDatasetName(e.target.value)}
+                placeholder={files[0]?.name}
+                style={{ width: '100%', maxWidth: 420, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-btn)', padding: '8px 12px', fontSize: 14, color: 'var(--text-primary)', boxSizing: 'border-box' }}
+              />
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                {t('Defaults to the file name. This name appears in the Library, History and sessions.',
+                   'Lalai kepada nama fail. Nama ini muncul dalam Perpustakaan, Sejarah dan sesi.')}
+              </p>
+            </div>
+          )}
 
           {error && <div style={{ marginTop: 12, color: 'var(--danger)', fontSize: 13 }}>{error}</div>}
 

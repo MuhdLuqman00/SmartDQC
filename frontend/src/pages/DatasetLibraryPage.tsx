@@ -11,6 +11,7 @@ import { formatMytDateTime, formatMytDate } from '../lib/formatMyt';
 
 interface Dataset {
   id: string;
+  name?: string;
   filename: string;
   source_type: string | null;
   row_count: number | null;
@@ -136,7 +137,7 @@ export function DatasetLibraryPage() {
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-all', flex: 1, minWidth: 0 }}>{ds.filename}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-all', flex: 1, minWidth: 0 }}>{ds.name || ds.filename}</div>
                 {/* Short stable id — datasets often share a filename; the id is
                     the only guaranteed-unique distinguisher. */}
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
@@ -151,7 +152,7 @@ export function DatasetLibraryPage() {
                 <button
                   onClick={e => {
                     e.stopPropagation();
-                    setSession({ cacheId: ds.id, filename: ds.filename, sourceType: ds.source_type });
+                    setSession({ cacheId: ds.id, filename: ds.name || ds.filename, sourceType: ds.source_type });
                     nav('/');
                   }}
                   style={{ background: 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
