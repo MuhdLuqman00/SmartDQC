@@ -79,40 +79,44 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
   return (
     <aside style={{
       width: collapsed ? 72 : 248,
-      background: 'var(--gradient-navy)',
+      /* Flat navy "ink", not a gradient — a printed-document surface reads as
+         deliberate, where a soft gradient reads as generic SaaS chrome. */
+      background: 'var(--kkm-deep)',
       display: 'flex', flexDirection: 'column',
       transition: 'width var(--transition-lg)',
       overflow: 'hidden', flexShrink: 0,
       borderRight: '1px solid rgba(255,255,255,0.06)',
       position: 'relative',
     }}>
-      {/* Brand */}
+      {/* Brand — pure-typographic ministerial letterhead. No monogram tile:
+          the serif wordmark + a single gold rule + the ministry register carry
+          the identity. A flat, document-like mark that reads as deliberate and
+          can't be mistaken for a generated/stock badge. Height matches the
+          TopBar (64px) so the divider below aligns with the page content line.
+          The gold rule (alignItems:stretch) spans the register width. */}
       <div style={{
-        height: 68, display: 'flex', alignItems: 'center',
-        padding: collapsed ? '0 18px' : '0 20px', gap: 12, flexShrink: 0,
+        height: 64, flexShrink: 0, display: 'flex', alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        padding: collapsed ? '0 12px' : '0 20px',
         borderBottom: '1px solid rgba(255,255,255,0.07)',
       }}>
-        <div style={{
-          width: 38, height: 38, borderRadius: 11, flexShrink: 0,
-          background: 'var(--gradient-gold)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: 'var(--font-display)',
-          fontWeight: 800, fontSize: 16, color: '#0F1B2F',
-          boxShadow: '0 4px 14px rgba(200,150,46,0.35)',
-        }}>S</div>
-        {!collapsed && (
-          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
-            <span style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800, fontSize: 16, color: '#fff', whiteSpace: 'nowrap',
-            }}>
-              Smart<span style={{ color: 'var(--accent-soft)' }}>DQC</span>
+        {collapsed ? (
+          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22, color: '#fff', lineHeight: 1 }}>S</span>
+            <span style={{ width: 18, height: 1.5, marginTop: 5, background: 'var(--accent)' }} />
+          </div>
+        ) : (
+          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'stretch' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
+              SmartDQC
             </span>
+            <span style={{ height: 1.5, margin: '7px 0 6px', background: 'var(--accent)' }} />
             <span style={{
-              fontSize: 9.5, letterSpacing: '0.16em', textTransform: 'uppercase',
-              color: 'rgba(255,255,255,0.42)', fontWeight: 600,
+              fontFamily: 'var(--font-mono)', fontSize: 8, letterSpacing: '0.06em',
+              textTransform: 'uppercase', color: 'rgba(255,255,255,0.46)',
+              whiteSpace: 'nowrap', lineHeight: 1,
             }}>
-              KKM · Data Quality
+              Kementerian Kesihatan Malaysia
             </span>
           </div>
         )}
@@ -148,10 +152,12 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
                       position: 'relative',
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: collapsed ? '11px 14px' : '10px 14px',
-                      borderRadius: 10, marginBottom: 2,
+                      borderRadius: 6, marginBottom: 2,
                       color: active ? '#fff' : hov ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)',
+                      /* Flat lifted row for the active item — no gradient
+                         (gradients read as generic SaaS chrome). */
                       background: active
-                        ? 'linear-gradient(100deg, rgba(46,74,122,0.55), rgba(46,74,122,0.18))'
+                        ? 'rgba(255,255,255,0.07)'
                         : hov ? 'rgba(255,255,255,0.06)' : 'transparent',
                       fontSize: 13.5, fontWeight: active ? 600 : 500,
                       transition: 'color var(--transition), background var(--transition)',
@@ -159,11 +165,13 @@ export function Sidebar({ role, collapsed, onToggle }: Props): JSX.Element {
                     }}
                   >
                     {active && (
+                      /* Flat gold index bar — a crisp "you are here" marker,
+                         no glow, no gradient. Absolutely positioned so the
+                         label never shifts between active and inactive. */
                       <span style={{
                         position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-                        width: 3, height: 22, borderRadius: 3,
-                        background: 'var(--gradient-gold)',
-                        boxShadow: '0 0 10px rgba(200,150,46,0.6)',
+                        width: 3, height: 20, borderRadius: 1,
+                        background: 'var(--accent)',
                       }} />
                     )}
                     <span className="icon-pop" style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{item.icon}</span>

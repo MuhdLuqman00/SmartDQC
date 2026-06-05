@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Sun, Moon, LogOut, FileText, ChevronRight } from 'lucide-react';
+import { Sun, Moon, LogOut, FileText } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useLang } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
@@ -43,15 +43,15 @@ export function TopBar() {
   return (
     <header className="glass" style={{
       height: 64, borderBottom: '1px solid var(--border)',
-      display: 'flex', alignItems: 'center', padding: '0 28px', gap: 14,
+      display: 'flex', alignItems: 'center', padding: '0 32px', gap: 14,
       flexShrink: 0, position: 'sticky', top: 0, zIndex: 'var(--z-sticky)' as React.CSSProperties['zIndex'],
     }}>
-      {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>SmartDQC</span>
-        <ChevronRight size={13} style={{ color: 'var(--text-muted)' }} />
-        {/* Signature: gold "letterhead" keyline under the page title — the
-           one distinctive detail carried across all 14 routes. */}
+      {/* Page title leads the top bar — the sidebar now carries the brand, so
+          the old "SmartDQC ›" breadcrumb prefix was redundant. The gold keyline
+          under the serif title is the running-header signature carried across
+          all routes, and at a 32px gutter it left-aligns with the page content
+          below it (letterhead alignment). */}
+      <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
         <h1 className="kkm-keyline" style={{
           fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16,
           color: 'var(--text-primary)', whiteSpace: 'nowrap',
