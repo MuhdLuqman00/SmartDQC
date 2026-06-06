@@ -109,6 +109,19 @@ def _extract_json(raw: str) -> dict:
 
 _EMPTY_KEYS = ["who", "what", "when", "where", "why", "how"]
 
+# Distinctive values from the recommendations prompt scaffold.
+# Two or more matches on a single rec → the model echoed the template.
+_ECHO_MARKERS = {
+    "action_en": "short action title in English",
+    "en":        "detailed recommendation in English",
+    "reasoning": "why this is recommended based on the data",
+}
+
+
+def _is_echoed(rec: dict) -> bool:
+    """Return True if this rec is the raw prompt scaffold echoed by the model."""
+    return sum(1 for k, v in _ECHO_MARKERS.items() if rec.get(k) == v) >= 2
+
 
 def _insights_fallback(message_en: str, message_bm: str, flag: str) -> dict:
     """A clearly-flagged, non-blank insights payload.
@@ -189,12 +202,12 @@ Respond with this exact JSON structure:
 {{
   "recommendations": [
     {{
-      "action_en": "short action title in English",
-      "action_bm": "tajuk tindakan ringkas dalam Bahasa Malaysia",
+      "action_en": "...",
+      "action_bm": "...",
       "priority": "high",
-      "bm": "detailed recommendation in Bahasa Malaysia",
-      "en": "detailed recommendation in English",
-      "reasoning": "why this is recommended based on the data"
+      "bm": "...",
+      "en": "...",
+      "reasoning": "..."
     }}
   ]
 }}
@@ -209,7 +222,13 @@ Both action_en and action_bm are REQUIRED — never leave either blank, never re
     if not raw or not raw.strip():
         return {"recommendations": [], "_rec_flag": "empty_response"}
     try:
-        return _extract_json(raw)
+        parsed = _extract_json(raw)
+        recs = parsed.get("recommendations", [])
+        clean = [r for r in recs if not _is_echoed(r)]
+        if recs and not clean:
+            return {"recommendations": [], "_rec_flag": "placeholder_echo"}
+        parsed["recommendations"] = clean
+        return parsed
     except Exception:
         return {"recommendations": [], "_rec_flag": "parse_error"}
 

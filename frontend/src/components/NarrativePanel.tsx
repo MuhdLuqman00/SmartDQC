@@ -77,13 +77,13 @@ export function NarrativePanel({ raw }: { raw: NarrativeRaw }) {
         </div>
       )}
 
-      {recs.length > 0 && (
+      {recs.filter(r => r.en !== 'detailed recommendation in English').length > 0 && (
         <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, color: 'var(--kkm-sky)', fontWeight: 600, fontSize: 12 }}>
             <ListChecks size={13} /> {t('Recommendations', 'Cadangan')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {recs.map((r, i) => (
+            {recs.filter(r => r.en !== 'detailed recommendation in English').map((r, i) => (
               <div key={i} style={{ borderLeft: `3px solid ${prioColor(r.priority)}`, paddingLeft: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{pickAction(r, lang)}</span>
