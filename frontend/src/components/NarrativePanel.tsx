@@ -19,11 +19,29 @@ export interface NarrativeRaw {
   recommendations?: NarrativeRecommendation[];
 }
 
+/* Scaffold/placeholder strings a weak model echoes instead of real content.
+   Mirrors the backend guard so already-stored cached narratives (which never
+   re-run through the backend) also render clean. */
+const REC_PLACEHOLDERS = new Set([
+  '', '...',
+  'short action title in english',
+  'tajuk tindakan ringkas dalam bahasa malaysia',
+  'detailed recommendation in english',
+  'detailed recommendation in bahasa malaysia',
+  'cadangan terperinci dalam bahasa malaysia',
+  'why this is recommended based on the data',
+]);
+const isPlaceholder = (v?: string): boolean => REC_PLACEHOLDERS.has((v ?? '').trim().toLowerCase());
+const cleanField = (v?: string): string => (isPlaceholder(v) ? '' : (v ?? ''));
+/* A rec is junk when its body is placeholder in BOTH languages. */
+const isJunkRec = (r: NarrativeRecommendation): boolean =>
+  isPlaceholder(r.bm) && isPlaceholder(r.en);
+
 /* Pick the action title in the active language; fall back to the other
-   language, then to the legacy single-string `action`. */
+   language, then to the legacy single-string `action`. Placeholders skipped. */
 function pickAction(r: NarrativeRecommendation, lang: 'en' | 'bm'): string {
-  if (lang === 'en') return r.action_en || r.action_bm || r.action || '';
-  return r.action_bm || r.action_en || r.action || '';
+  const en = cleanField(r.action_en), bm = cleanField(r.action_bm), legacy = cleanField(r.action);
+  return lang === 'en' ? (en || bm || legacy) : (bm || en || legacy);
 }
 
 const W5H1_ORDER = ['who', 'what', 'when', 'where', 'why', 'how'] as const;
@@ -46,7 +64,7 @@ export function NarrativePanel({ raw }: { raw: NarrativeRaw }) {
 
   const summary = pick(raw.executive_summary);
   const insights = raw.insights_5w1h || {};
-  const recs = raw.recommendations || [];
+  const visibleRecs = (raw.recommendations || []).filter(r => !isJunkRec(r));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -77,32 +95,38 @@ export function NarrativePanel({ raw }: { raw: NarrativeRaw }) {
         </div>
       )}
 
-      {recs.filter(r => r.en !== 'detailed recommendation in English').length > 0 && (
+      {visibleRecs.length > 0 && (
         <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, color: 'var(--kkm-sky)', fontWeight: 600, fontSize: 12 }}>
             <ListChecks size={13} /> {t('Recommendations', 'Cadangan')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {recs.filter(r => r.en !== 'detailed recommendation in English').map((r, i) => (
-              <div key={i} style={{ borderLeft: `3px solid ${prioColor(r.priority)}`, paddingLeft: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{pickAction(r, lang)}</span>
-                  {r.priority && (
-                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: prioColor(r.priority) }}>
-                      {r.priority}
-                    </span>
+            {visibleRecs.map((r, i) => {
+              const body = lang === 'en'
+                ? (cleanField(r.en) || cleanField(r.bm))
+                : (cleanField(r.bm) || cleanField(r.en));
+              const reasoning = cleanField(r.reasoning);
+              return (
+                <div key={i} style={{ borderLeft: `3px solid ${prioColor(r.priority)}`, paddingLeft: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{pickAction(r, lang)}</span>
+                    {r.priority && (
+                      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: prioColor(r.priority) }}>
+                        {r.priority}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)' }}>
+                    {body}
+                  </div>
+                  {reasoning && (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>
+                      {reasoning}
+                    </div>
                   )}
                 </div>
-                <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)' }}>
-                  {(lang === 'en' ? r.en : r.bm) || r.en || r.bm}
-                </div>
-                {r.reasoning && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>
-                    {r.reasoning}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

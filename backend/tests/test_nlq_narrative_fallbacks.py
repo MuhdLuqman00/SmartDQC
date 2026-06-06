@@ -74,17 +74,58 @@ def test_echo_guard_drops_scaffolded_recs():
     assert out.get("_rec_flag") == "placeholder_echo"
 
 
+def test_echo_guard_drops_ellipsis_echo():
+    """Model echoes the current '...' scaffold → flagged, not rendered as junk."""
+    echoed = json.dumps({"recommendations": [{
+        "action_en": "...", "action_bm": "...", "priority": "high",
+        "bm": "...", "en": "...", "reasoning": "...",
+    }]})
+    with patch("backend.ai.narrative.generate", return_value=echoed):
+        out = generate_recommendations({}, _GOOD_INSIGHTS)
+    assert out["recommendations"] == []
+    assert out.get("_rec_flag") == "placeholder_echo"
+
+
+def test_echo_guard_drops_partial_ellipsis_body():
+    """Real title but a placeholder body in both languages → still dropped."""
+    partial = json.dumps({"recommendations": [{
+        "action_en": "Increase rural outreach", "action_bm": "Tingkatkan jangkauan",
+        "priority": "high", "bm": "...", "en": "...", "reasoning": "...",
+    }]})
+    with patch("backend.ai.narrative.generate", return_value=partial):
+        out = generate_recommendations({}, _GOOD_INSIGHTS)
+    assert out["recommendations"] == []
+    assert out.get("_rec_flag") == "placeholder_echo"
+
+
 def test_echo_guard_passes_real_recs():
     """Model returns genuine content → recommendations pass through unchanged."""
     real = json.dumps({"recommendations": [{
         "action_en": "Increase clinic outreach in rural areas",
         "action_bm": "Tingkatkan jangkauan klinik di kawasan luar bandar",
         "priority": "high",
-        "bm": "Cadangan terperinci dalam BM.",
-        "en": "Detailed recommendation in English.",
+        "bm": "Hantar pasukan mudah alih ke daerah berisiko tinggi setiap suku tahun.",
+        "en": "Send mobile teams to high-risk districts each quarter.",
         "reasoning": "Rural districts show 40% stunting above national average.",
     }]})
     with patch("backend.ai.narrative.generate", return_value=real):
         out = generate_recommendations({}, _GOOD_INSIGHTS)
     assert len(out["recommendations"]) == 1
     assert out["recommendations"][0]["action_en"] == "Increase clinic outreach in rural areas"
+
+
+def test_echo_guard_scrubs_partial_placeholder_fields():
+    """A rec with a real body but a placeholder reasoning keeps the rec and
+    blanks the junk field so it never renders the scaffold line."""
+    mixed = json.dumps({"recommendations": [{
+        "action_en": "Boost vaccination", "action_bm": "Tingkatkan vaksinasi",
+        "priority": "medium",
+        "bm": "Adakan kempen vaksinasi tambahan di kawasan luar bandar.",
+        "en": "Run supplementary vaccination drives in rural areas.",
+        "reasoning": "why this is recommended based on the data",
+    }]})
+    with patch("backend.ai.narrative.generate", return_value=mixed):
+        out = generate_recommendations({}, _GOOD_INSIGHTS)
+    assert len(out["recommendations"]) == 1
+    assert out["recommendations"][0]["reasoning"] == ""
+    assert out["recommendations"][0]["en"].startswith("Run supplementary")

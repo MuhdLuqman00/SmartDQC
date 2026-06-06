@@ -109,18 +109,29 @@ def _extract_json(raw: str) -> dict:
 
 _EMPTY_KEYS = ["who", "what", "when", "where", "why", "how"]
 
-# Distinctive values from the recommendations prompt scaffold.
-# Two or more matches on a single rec → the model echoed the template.
-_ECHO_MARKERS = {
-    "action_en": "short action title in English",
-    "en":        "detailed recommendation in English",
-    "reasoning": "why this is recommended based on the data",
+# Placeholder / scaffold values a weak model echoes instead of real content.
+# Covers the "..." scaffold (current prompt), blanks, and the older descriptive
+# scaffold strings that may still sit in cached narratives — all lower-cased.
+_PLACEHOLDER_VALUES = {
+    "", "...",
+    "short action title in english",
+    "tajuk tindakan ringkas dalam bahasa malaysia",
+    "detailed recommendation in english",
+    "detailed recommendation in bahasa malaysia",
+    "cadangan terperinci dalam bahasa malaysia",
+    "why this is recommended based on the data",
 }
 
 
+def _is_placeholder(value) -> bool:
+    """True if a field holds scaffold/placeholder text rather than real content."""
+    return (value or "").strip().lower() in _PLACEHOLDER_VALUES
+
+
 def _is_echoed(rec: dict) -> bool:
-    """Return True if this rec is the raw prompt scaffold echoed by the model."""
-    return sum(1 for k, v in _ECHO_MARKERS.items() if rec.get(k) == v) >= 2
+    """A recommendation is junk when its body is placeholder in BOTH languages —
+    the body is the substance; without it the card says nothing."""
+    return _is_placeholder(rec.get("en")) and _is_placeholder(rec.get("bm"))
 
 
 def _insights_fallback(message_en: str, message_bm: str, flag: str) -> dict:
@@ -223,8 +234,16 @@ Both action_en and action_bm are REQUIRED — never leave either blank, never re
         return {"recommendations": [], "_rec_flag": "empty_response"}
     try:
         parsed = _extract_json(raw)
-        recs = parsed.get("recommendations", [])
-        clean = [r for r in recs if not _is_echoed(r)]
+        recs = parsed.get("recommendations", []) or []
+        clean = []
+        for r in recs:
+            if not isinstance(r, dict) or _is_echoed(r):
+                continue
+            # Scrub any residual scaffold bits so a surviving rec renders nothing junk.
+            for k in ("en", "bm", "action_en", "action_bm", "reasoning"):
+                if _is_placeholder(r.get(k)):
+                    r[k] = ""
+            clean.append(r)
         if recs and not clean:
             return {"recommendations": [], "_rec_flag": "placeholder_echo"}
         parsed["recommendations"] = clean
