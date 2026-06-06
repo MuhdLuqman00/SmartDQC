@@ -111,7 +111,7 @@ export function CleaningPage() {
                 <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: 6 }}>
                   {s.label}
                 </div>
-                <div className="mono" style={{ fontSize: 24, fontWeight: 700 }}>{s.value}</div>
+                <div style={{ fontFamily: 'var(--font-body)', fontVariantNumeric: 'tabular-nums', fontSize: 24, fontWeight: 700 }}>{s.value}</div>
               </div>
             ))}
           </div>
