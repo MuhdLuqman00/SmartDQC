@@ -30,7 +30,7 @@ from fastapi import (
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 
 from .config import STANDARD_SCHEMA, auto_suggest_mapping, detect_source_type
@@ -2064,6 +2064,66 @@ async def preview_cached_endpoint(
             }
         )
     )
+
+
+# ── Stable-key query seam (Phase 5 — edit-under-filter + future scale) ────────
+class QueryCachedRequest(BaseModel):
+    cache_id: str
+    search:   str | None = None
+    sort_col: str | None = None
+    sort_dir: str        = "asc"   # "asc" | "desc"
+    offset:   int        = Field(0,     ge=0)
+    limit:    int        = Field(10000, ge=1, le=100000)
+
+
+@app.post("/clean/query-cached")
+async def query_cached_seam(req: QueryCachedRequest):
+    """Full-dataset query endpoint with stable _row_id per row.
+
+    _row_id = positional iloc index in the original (cleaned) DataFrame.
+    Edits via PATCH /clean/cell route by _row_id — safe under any sort/filter.
+    Phase 7 can swap the pandas backend to DuckDB/Parquet behind this contract.
+    """
+    entry = _cache_get(req.cache_id)
+    if entry is None:
+        raise HTTPException(404, "cache_id not found — please re-run cleaning.")
+
+    df = entry["df"].reset_index(drop=True)
+    flags = _compute_row_flags(df)
+
+    # Embed stable ids and per-row flag before any filter/sort
+    result = df.copy()
+    result.insert(0, "_row_id",   range(len(result)))
+    result.insert(1, "_flagged",  flags.values.astype(bool))
+
+    # Apply search across all non-private columns
+    if req.search:
+        q = req.search.lower()
+        data_cols = [c for c in result.columns if not c.startswith("_")]
+        mask = result[data_cols].astype(str).apply(
+            lambda row: any(q in v.lower() for v in row if v.lower() not in ("nan", "none")),
+            axis=1,
+        )
+        result = result[mask]
+
+    # Apply sort (never sort on _row_id / _flagged themselves)
+    if req.sort_col and req.sort_col in result.columns and not req.sort_col.startswith("_"):
+        result = result.sort_values(
+            req.sort_col,
+            ascending=(req.sort_dir != "desc"),
+            na_position="last",
+        )
+
+    total = int(len(result))
+    window = result.iloc[req.offset: req.offset + req.limit]
+    rows = window.replace({np.nan: None}).to_dict(orient="records")
+
+    return JSONResponse(content=json_safe({
+        "rows":     rows,
+        "total":    total,
+        "returned": len(rows),
+        "offset":   req.offset,
+    }))
 
 
 def _cache_write(key: str, entry: dict) -> None:
