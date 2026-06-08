@@ -192,7 +192,19 @@ export function ExplorerPage() {
           </span>
           <div style={{ flex: 1 }} />
           <a
-            href={`${BASE}/clean/download-cached/${cacheId}?format=csv`}
+            href={`${BASE}/clean/download-xlsx/${cacheId}`}
+            target="_blank" rel="noreferrer"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'var(--kkm-blue)', border: '1px solid var(--kkm-blue)',
+              borderRadius: 'var(--radius-btn)', padding: '7px 14px',
+              fontSize: 13, fontWeight: 600, color: '#fff',
+            }}
+          >
+            <Download size={14} /> {t('Download XLSX', 'Muat Turun XLSX')}
+          </a>
+          <a
+            href={`${BASE}/clean/download-cached/${cacheId}?fmt=csv`}
             target="_blank" rel="noreferrer"
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
@@ -201,7 +213,7 @@ export function ExplorerPage() {
               fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
             }}
           >
-            <Download size={14} /> {t('Download Full CSV', 'Muat Turun CSV Penuh')}
+            <Download size={14} /> {t('Download CSV', 'Muat Turun CSV')}
           </a>
         </div>
 

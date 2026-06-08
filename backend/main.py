@@ -42,7 +42,7 @@ from .export.tableau import (
     to_excel as tbl_excel,
     to_csv as tbl_csv,
 )
-from .export.cleaned import to_excel as cln_excel, to_csv as cln_csv
+from .export.cleaned import to_excel as cln_excel, to_csv as cln_csv, to_excel_typed as cln_excel_typed
 from .auth import (
     hash_password,
     verify_password,
@@ -2124,6 +2124,31 @@ async def query_cached_seam(req: QueryCachedRequest):
         "returned": len(rows),
         "offset":   req.offset,
     }))
+
+
+@app.get("/clean/download-xlsx/{cache_id}")
+async def download_xlsx_endpoint(cache_id: str):
+    """Download the cleaned dataset as XLSX with IC/text columns typed correctly.
+
+    Unlike the generic download-cached endpoint, this forces object-dtype and
+    IC-keyword columns to Excel text format (@) so leading zeros in MyKid/IC
+    numbers are preserved when the file is opened in Excel.
+    """
+    entry = _cache_get(cache_id)
+    if entry is None:
+        raise HTTPException(404, "Cached data not found — please re-run cleaning.")
+
+    df = entry["df"]
+    timestamp = pd.Timestamp.now().strftime("%Y%m%d")
+    xlsx_bytes = cln_excel_typed(df)
+
+    return StreamingResponse(
+        iter([xlsx_bytes]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="SmartDQC_Cleaned_{timestamp}.xlsx"'
+        },
+    )
 
 
 def _cache_write(key: str, entry: dict) -> None:
