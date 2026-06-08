@@ -7,7 +7,7 @@ import httpx
 logger = logging.getLogger("smartdqc.ollama")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "hf.co/mradermacher/gemma-4-E4B-GGUF:Q6_K")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:4b-q4_K_M")
 # Keep the model resident in memory between requests so the first click after
 # an idle period doesn't pay a cold model-load (the root cause of the post-idle
 # "failed to generate narrative" 500). "-1" = keep loaded indefinitely; can be
@@ -15,10 +15,12 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "hf.co/mradermacher/gemma-4-E4B-GGUF:Q6
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 # Thinking ("reasoning") models like Qwen3 route their answer into a separate
 # `thinking` field and leave `response` empty — especially with format="json" —
-# which surfaced as "AI insight generation returned no output". Set
-# OLLAMA_THINK=false to send `think: false` so the model writes its answer
-# straight to `response`. Left model-agnostic: non-thinking models ignore it.
-OLLAMA_THINK = os.getenv("OLLAMA_THINK", "true").strip().lower() != "false"
+# which surfaced as "AI insight generation returned no output". We therefore
+# DEFAULT to `think: false` (the active Qwen3.5 narrative model is a hybrid
+# reasoner) so the model writes its answer straight to `response` instead of
+# burning latency on reasoning tokens. Set OLLAMA_THINK=true to re-enable
+# reasoning. Left model-agnostic: non-thinking models ignore the flag.
+OLLAMA_THINK = os.getenv("OLLAMA_THINK", "false").strip().lower() != "false"
 # How long warmup may spend waiting for Ollama + pulling the model on boot.
 OLLAMA_PULL_TIMEOUT = float(os.getenv("OLLAMA_PULL_TIMEOUT", "1800"))
 

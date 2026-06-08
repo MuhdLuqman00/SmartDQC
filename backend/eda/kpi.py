@@ -358,7 +358,6 @@ def compute_trajectory_narratives(
     # "period" values are measurement years (tahun_ukur). Resolve the forecast
     # target year ONCE so the label is consistent across districts: the
     # configured target_year, else the latest data year + default horizon.
-    # Always a forward projection (guard a configured past/near year).
     def _yr(v):
         try:
             return int(float(v))
@@ -366,8 +365,14 @@ def compute_trajectory_narratives(
             return None
     _years = [y for y in (_yr(p) for p in df["period"]) if y is not None]
     last_year = max(_years) if _years else int(pd.Timestamp.now().year)
-    effective_year = int(target_year) if target_year else last_year + _FORECAST_PERIODS
-    effective_year = max(effective_year, last_year + 1)
+    if target_year is None:
+        effective_year = last_year + _FORECAST_PERIODS
+    else:
+        # Honour the admin-configured year exactly. Only guard against
+        # projecting before the latest data year — NOT last_year+1, which
+        # would incorrectly bump an explicit 2027 setting to 2028 when the
+        # dataset itself contains 2027 records.
+        effective_year = max(int(target_year), last_year)
 
     kpi_rate_cols = {
         "stunting_rate":    "stunting_rate",

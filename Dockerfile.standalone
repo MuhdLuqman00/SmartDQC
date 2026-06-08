@@ -64,16 +64,12 @@ RUN PG_BIN=$(find /usr/lib/postgresql/*/bin -maxdepth 0 | sort -V | tail -1) && 
     ln -s $PG_BIN/psql /usr/local/bin/psql
 ENV OLLAMA_BASE_URL=http://localhost:11434
 ENV DATABASE_URL=postgresql://smartdqc:smartdqc@localhost/smartdqc
-# Default LLM baked into the image; read by both the entrypoint pre-pull and
-# the backend. Override at run time with `-e OLLAMA_MODEL=...`.
-ENV OLLAMA_MODEL=hf.co/mradermacher/gemma-4-E4B-GGUF:Q6_K
+# Default LLM. NOT baked into the image — Ollama pulls it from the Ollama
+# registry on first container boot (see entrypoint-all.sh), then caches it in the
+# ollama_models volume for subsequent restarts. The deploy host therefore needs
+# internet access on first run. Override at run time with `-e OLLAMA_MODEL=...`.
+ENV OLLAMA_MODEL=qwen3.5:4b-q4_K_M
 ENV OLLAMA_THINK=false
-
-# Bake the model into the image at build time — runtime needs no internet access.
-RUN ollama serve & \
-    until curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; do sleep 1; done && \
-    ollama pull hf.co/mradermacher/gemma-4-E4B-GGUF:Q6_K && \
-    pkill ollama
 
 VOLUME ["/var/lib/postgresql/data"]
 EXPOSE 3000 8000

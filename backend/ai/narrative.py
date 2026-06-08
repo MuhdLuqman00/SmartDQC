@@ -5,8 +5,11 @@ from .ollama_client import generate, OllamaError
 _ANTI_ECHO_RULES = """Rules (follow exactly):
 - Fill EVERY field with real, specific content derived from the dataset context. Never copy the template.
 - The "..." in the schema below are placeholders — replace each one. Never output a literal "..." or an empty string.
+- GROUNDING: Use ONLY the figures, percentages, dates, years, places and counts that appear in the dataset context above. NEVER invent or estimate any number, date, year, quarter, month, ringgit/RM amount, family/beneficiary count, district name, state name, or programme/policy name that is not explicitly present. If a specific figure is not given, describe it qualitatively rather than fabricating one.
+- The total record count is EXACTLY the number stated in the dataset context. Never state a different total in any field.
+- Do not confuse the indicators: stunting, wasting, underweight and overweight are distinct — describe each only with its own figure from the context.
 - Never output the words "in English", "in Bahasa Malaysia", "dalam bahasa Malaysia", or any field label as a value.
-- "en" must be English prose; "bm" must be Bahasa Malaysia prose. They must be genuine translations of each other, not the same string and not instructions about which language to use.
+- "en" must be English prose ONLY; "bm" must be Bahasa Malaysia prose ONLY — never mix languages within a single field. They must be genuine translations of each other, not the same string and not instructions about which language to use.
 - Respond with valid JSON only. No markdown, no commentary outside the JSON."""
 
 INSIGHTS_SYSTEM = f"""/no_think
@@ -277,12 +280,13 @@ Now respond with this exact JSON structure (replace every "..." with real conten
       "priority": "high",
       "bm": "...",
       "en": "...",
-      "reasoning": "..."
+      "reasoning_en": "...",
+      "reasoning_bm": "..."
     }}
   ]
 }}
 
-action_en/en must be English and action_bm/bm must be Bahasa Malaysia — never leave either blank, never reuse the same string for both, never write the word "English" or "Malaysia" as the value. Provide 3-5 recommendations ordered by priority (high/medium/low)."""
+action_en/en/reasoning_en must be English and action_bm/bm/reasoning_bm must be Bahasa Malaysia — never leave either blank, never reuse the same string for both, never write the word "English" or "Malaysia" as the value. Provide 3-5 recommendations ordered by priority (high/medium/low)."""
 
     if not raw_ok(insights):
         # Insights failed; don't waste a second model call or imply success.
@@ -299,7 +303,7 @@ action_en/en must be English and action_bm/bm must be Bahasa Malaysia — never 
             if not isinstance(r, dict) or _is_echoed(r):
                 continue
             # Scrub any residual scaffold bits so a surviving rec renders nothing junk.
-            for k in ("en", "bm", "action_en", "action_bm", "reasoning"):
+            for k in ("en", "bm", "action_en", "action_bm", "reasoning_en", "reasoning_bm", "reasoning"):
                 if _is_placeholder(r.get(k)):
                     r[k] = ""
             clean.append(r)

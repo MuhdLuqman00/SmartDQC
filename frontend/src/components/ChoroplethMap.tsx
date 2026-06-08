@@ -150,16 +150,24 @@ export function ChoroplethMap({ districts, selectedDistrict, onDistrictClick }: 
                   key={geo.rsmKey}
                   geography={geo}
                   fill={fill}
-                  stroke={isSelected ? 'var(--kkm-sky)' : 'var(--text-muted)'}
-                  strokeWidth={isSelected ? 2.5 : 1.25}
+                  stroke={isSelected ? 'var(--kkm-sky)' : 'var(--text-secondary)'}
+                  strokeWidth={isSelected ? 3 : 1.6}
                   style={{
+                    /* Boundaries on an 800-unit viewBox scale down ~0.65× in the
+                       panel, so 1.6 ≈ 1.0px — heavier than the old hairline
+                       (1.25 ≈ 0.8px). --text-secondary is a desaturated grey
+                       that stays legible against BOTH status fills and the pale
+                       no-data fill, and contrasts in light AND dark mode (unlike
+                       --border-strong, which is too light on no-data regions).
+                       Hover lifts the stroke to --text-primary so the region the
+                       cursor is over reads clearly. */
                     default: {
                       outline: 'none',
                       opacity: 1,
                       strokeLinejoin: 'round',
-                      transition: 'opacity 0.15s ease, fill 0.15s ease',
+                      transition: 'opacity 0.15s ease, fill 0.15s ease, stroke 0.15s ease',
                     },
-                    hover:   { outline: 'none', opacity: 0.85, cursor: 'pointer', strokeLinejoin: 'round' },
+                    hover:   { outline: 'none', opacity: 0.9, cursor: 'pointer', strokeLinejoin: 'round', stroke: 'var(--text-primary)', strokeWidth: isSelected ? 3 : 2.25 },
                     pressed: { outline: 'none' },
                   }}
                   onClick={() => {

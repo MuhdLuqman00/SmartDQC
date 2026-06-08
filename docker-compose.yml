@@ -32,7 +32,8 @@ services:
     environment:
       - WHO_ZSCORE_DIR=/app/data/zscore
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-hf.co/mradermacher/gemma-4-E4B-GGUF:Q6_K}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:4b-q4_K_M}
+      - OLLAMA_THINK=${OLLAMA_THINK:-false}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-smartdqc}:${POSTGRES_PASSWORD:-smartdqc}@postgres/${POSTGRES_DB:-smartdqc}
     depends_on:
       postgres:
@@ -69,7 +70,7 @@ services:
     depends_on:
       - ollama
     environment:
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-hf.co/mradermacher/gemma-4-E4B-GGUF:Q6_K}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:4b-q4_K_M}
     entrypoint: >
       sh -c "
         echo 'Waiting for Ollama...' &&

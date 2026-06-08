@@ -197,12 +197,23 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
-function KpiCard({ label, value, status }: { label: string; value: number; status: Status }) {
+function KpiCard({ label, value, status, onClick, isSelected }: {
+  label: string; value: number; status: Status;
+  onClick?: () => void; isSelected?: boolean;
+}) {
   return (
-    <div style={{
-      background: 'var(--surface-2)', border: '0.5px solid var(--border)',
-      borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6,
-    }}>
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: isSelected ? 'var(--surface-3)' : 'var(--surface-2)',
+        border: isSelected ? '2px solid var(--kkm-sky)' : '0.5px solid var(--border)',
+        borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6,
+        cursor: onClick ? 'pointer' : 'default', textAlign: 'left', width: '100%',
+        transition: 'border-color var(--transition), background var(--transition)',
+        boxShadow: isSelected ? 'var(--glow-accent)' : 'none',
+      }}
+    >
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         {label}
       </div>
@@ -210,7 +221,7 @@ function KpiCard({ label, value, status }: { label: string; value: number; statu
         {(value * 100).toFixed(1)}%
       </div>
       <StatusBadge status={status} />
-    </div>
+    </button>
   );
 }
 
@@ -275,10 +286,17 @@ function toRankRows(rows: KpiGroupRow[], groupKey: string, indicator: IndicatorK
 // pages stay in lock-step. GeoPage shows every catalog entry whose `home`
 // is 'geo' — currently 7 histograms + 5 scatters.
 
-function HistogramPanel({ title, block }: { title: string; block: HistogramBlock }) {
+function HistogramPanel({ title, block, onFocus }: { title: string; block: HistogramBlock; onFocus?: () => void }) {
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)' }}>
-      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 600 }}>{title}</div>
+        {onFocus && (
+          <button onClick={onFocus} aria-label="Expand" title="Expand" style={panelIconBtn}>
+            <Maximize2 size={13} />
+          </button>
+        )}
+      </div>
       <ResponsiveContainer width="100%" height={176}>
         <BarChart data={block.data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
           <XAxis
@@ -300,10 +318,17 @@ function HistogramPanel({ title, block }: { title: string; block: HistogramBlock
   );
 }
 
-function ScatterPanel({ title, block }: { title: string; block: ScatterBlock }) {
+function ScatterPanel({ title, block, onFocus }: { title: string; block: ScatterBlock; onFocus?: () => void }) {
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '16px 18px', boxShadow: 'var(--shadow-card)' }}>
-      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 600 }}>{title}</div>
+        {onFocus && (
+          <button onClick={onFocus} aria-label="Expand" title="Expand" style={panelIconBtn}>
+            <Maximize2 size={13} />
+          </button>
+        )}
+      </div>
       <ResponsiveContainer width="100%" height={200}>
         <ScatterChart margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
           <XAxis type="number" dataKey="x" name={block.x_label} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
@@ -338,6 +363,7 @@ export function GeoPage() {
   const [blocksError, setBlocksError] = useState(false);
   const [showAllDist, setShowAllDist] = useState(false);
   const [trajFocus, setTrajFocus] = useState(false);
+  const [focusedChart, setFocusedChart] = useState<string | null>(null);
 
   const [traj, setTraj] = useState<TrajectoryResp | null>(null);
   const [trajError, setTrajError] = useState(false);
@@ -463,10 +489,10 @@ export function GeoPage() {
               {t('National Average', 'Purata Nasional')}{districts.length > 0 ? ` (${districts.length} ${t('states', 'negeri')})` : ''}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <KpiCard label={t('Stunting', 'Kelaparan')}             value={agg.stunting}    status={ragToStatus(agg.stuntingRag)} />
-              <KpiCard label={t('Wasting', 'Kurus')}                  value={agg.wasting}     status={ragToStatus(agg.wastingRag)} />
-              <KpiCard label={t('Underweight', 'Kekurangan Berat')}   value={agg.underweight} status={ragToStatus(agg.underweightRag)} />
-              <KpiCard label={t('Overweight', 'Berlebihan Berat')}    value={agg.overweight}  status={ragToStatus(agg.overweightRag)} />
+              <KpiCard label={t('Stunting', 'Kelaparan')}           value={agg.stunting}    status={ragToStatus(agg.stuntingRag)}    onClick={() => setSelectedIndicator('stunting')}    isSelected={selectedIndicator === 'stunting'} />
+              <KpiCard label={t('Wasting', 'Kurus')}                value={agg.wasting}     status={ragToStatus(agg.wastingRag)}     onClick={() => setSelectedIndicator('wasting')}     isSelected={selectedIndicator === 'wasting'} />
+              <KpiCard label={t('Underweight', 'Kekurangan Berat')} value={agg.underweight} status={ragToStatus(agg.underweightRag)} onClick={() => setSelectedIndicator('underweight')} isSelected={selectedIndicator === 'underweight'} />
+              <KpiCard label={t('Overweight', 'Berlebihan Berat')}  value={agg.overweight}  status={ragToStatus(agg.overweightRag)}  onClick={() => setSelectedIndicator('overweight')}  isSelected={selectedIndicator === 'overweight'} />
             </div>
           </div>
         </div>
@@ -711,31 +737,46 @@ export function GeoPage() {
             ) : blocksError ? (
               <ErrorRetry compact message={t('Could not load distributions.', 'Tidak dapat memuatkan taburan.')} onRetry={loadBlocks} />
             ) : blocks ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-                {(() => {
-                  // Recommended: every catalog entry whose home === 'geo'.
-                  // "Show all": fall back to anything in blocks that matches a
-                  // histogram or scatter shape, including future additions.
-                  const catalogKeys = catalogByHome('geo').map(e => e.key);
-                  const allHistOrScatter = Object.keys(blocks).filter(k => {
-                    const b = blocks[k];
-                    return isHistogramBlock(b) || isScatterBlock(b);
-                  });
-                  const keysToRender = showAllDist
-                    ? Array.from(new Set([...catalogKeys, ...allHistOrScatter]))
-                    : catalogKeys.filter(k => k in blocks);
-                  return keysToRender.map(key => {
-                    const b = blocks[key];
-                    const entry = catalogByHome('geo').find(e => e.key === key);
-                    const title = entry
-                      ? (lang === 'en' ? entry.titleEn : entry.titleBm)
-                      : key;
-                    if (isScatterBlock(b))   return <ScatterPanel   key={key} title={title} block={b} />;
-                    if (isHistogramBlock(b)) return <HistogramPanel key={key} title={title} block={b} />;
-                    return null;
-                  });
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+                  {(() => {
+                    // "Recommended" = catalog entries with recommended:true (7 histograms).
+                    // "Show all" = all catalog entries + any extra histogram/scatter blocks
+                    // from the backend that aren't yet in the catalog.
+                    const geoCatalog = catalogByHome('geo');
+                    const allCatalogKeys = geoCatalog.map(e => e.key);
+                    const recommendedKeys = geoCatalog.filter(e => e.recommended).map(e => e.key);
+                    const allHistOrScatter = Object.keys(blocks).filter(k => {
+                      const b = blocks[k];
+                      return isHistogramBlock(b) || isScatterBlock(b);
+                    });
+                    const keysToRender = showAllDist
+                      ? Array.from(new Set([...allCatalogKeys, ...allHistOrScatter]))
+                      : recommendedKeys.filter(k => k in blocks);
+                    return keysToRender.map(key => {
+                      const b = blocks[key];
+                      const entry = geoCatalog.find(e => e.key === key);
+                      const title = entry
+                        ? (lang === 'en' ? entry.titleEn : entry.titleBm)
+                        : key;
+                      if (isScatterBlock(b))   return <ScatterPanel   key={key} title={title} block={b} onFocus={() => setFocusedChart(key)} />;
+                      if (isHistogramBlock(b)) return <HistogramPanel key={key} title={title} block={b} onFocus={() => setFocusedChart(key)} />;
+                      return null;
+                    });
+                  })()}
+                </div>
+                {focusedChart && (() => {
+                  const b = blocks[focusedChart];
+                  const entry = catalogByHome('geo').find(e => e.key === focusedChart);
+                  const title = entry ? (lang === 'en' ? entry.titleEn : entry.titleBm) : focusedChart;
+                  return (
+                    <FocusOverlay open onClose={() => setFocusedChart(null)} title={title}>
+                      {isHistogramBlock(b) && <HistogramPanel title={title} block={b} />}
+                      {isScatterBlock(b)   && <ScatterPanel   title={title} block={b} />}
+                    </FocusOverlay>
+                  );
                 })()}
-              </div>
+              </>
             ) : null}
           </div>
         )}

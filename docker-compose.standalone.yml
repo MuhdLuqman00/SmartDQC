@@ -7,11 +7,11 @@
 # but lets you change the LLM model without editing this file — just edit the
 # .env next to it (copy from .env.standalone.example) or pass it inline:
 #
-#   OLLAMA_MODEL=hf.co/mradermacher/gemma-4-E4B-GGUF:Q6_K docker compose -f docker-compose.standalone.yml up -d
+#   OLLAMA_MODEL=qwen3.5:4b-q4_K_M docker compose -f docker-compose.standalone.yml up -d
 #
 # Whatever model you set is pulled by Ollama on startup, so it must be a valid
-# Ollama tag (https://ollama.com/library) or an hf.co/<repo>:<quant> GGUF
-# reference, and the machine needs internet the first time that model is pulled.
+# Ollama tag (https://ollama.com/library), and the machine needs internet the first time
+# that model is pulled.
 
 services:
   smartdqc:
@@ -22,20 +22,24 @@ services:
       - "8080:80"     # web UI  ->  open http://localhost:8080
     environment:
       # ── The knob you wanted: change the model here (or in .env) ──────────
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-hf.co/mradermacher/gemma-4-E4B-GGUF:Q6_K}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:4b-q4_K_M}
       # Keep the model resident between requests so the AI insight button
       # doesn't cold-start (and 500) after an idle period. "-1" = forever.
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
-      # Cap the context window. Gemma 4 defaults to a huge (128K+) context, so
-      # Ollama preallocates a multi-GB KV cache that dwarfs the 2GB model and
-      # pushes VRAM to ~9GB. SmartDQC prompts are small, so 8192 is plenty and
-      # frees enough VRAM to fit a larger model (e.g. e4b) on an 8GB card.
+      # Qwen3.5 is a hybrid-reasoning model; force think:false so the answer
+      # lands in `response` (not the `thinking` field) and we don't pay the
+      # latency of reasoning tokens on these short structured-JSON prompts.
+      - OLLAMA_THINK=${OLLAMA_THINK:-false}
+      # Cap the context window. Reasoning models default to a huge (128K+)
+      # context, so Ollama preallocates a multi-GB KV cache that dwarfs the
+      # ~4.5GB model. SmartDQC prompts are small, so 8192 is plenty and frees
+      # VRAM to keep the model 100% on an 8GB GPU.
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-8192}
     volumes:
       # Persist pulled models + the database across `down`/`up` so switching
       # back to an already-pulled model is instant and data survives restarts.
-      # NOTE: the named ollama volume masks any model baked into the image —
-      # on first boot the model in OLLAMA_MODEL is pulled fresh into it.
+      # The model is NOT baked into the image — on first boot Ollama pulls
+      # OLLAMA_MODEL from the Ollama registry into this volume (needs internet once).
       - ollama_models:/root/.ollama
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped

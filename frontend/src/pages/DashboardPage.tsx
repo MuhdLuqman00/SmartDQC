@@ -181,6 +181,80 @@ const RAG_TRACK_VAR: Record<'green' | 'amber' | 'red', string> = {
 const ragSolid = (r?: Rag): string => RAG_VAR[ragToLower(r)];
 const ragTrack = (r?: Rag): string => RAG_TRACK_VAR[ragToLower(r)];
 
+/* Always-legible target marker for value-vs-target bars. A high-contrast
+   notch wrapped in a thin surface-coloured halo so it reads against BOTH the
+   filled (status colour) and unfilled (surface-3) segments, in light and dark
+   mode — the bare 2px tick was invisible on short "good" bars. The parent bar
+   must be position:relative. `leftPct` is where the target sits on the track. */
+function TargetTick({ leftPct = 70 }: { leftPct?: number }) {
+  return (
+    <div aria-hidden style={{
+      position: 'absolute', left: `${leftPct}%`, top: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: 3, height: 'calc(100% + 7px)',
+      background: 'var(--text-primary)', borderRadius: 1,
+      boxShadow: '0 0 0 1.5px var(--surface)',
+    }} />
+  );
+}
+
+/* When a state is drilled into on the map, the right-hand panel shows ALL four
+   indicators, each as its own sub-section with that state's areas/daerah ranked
+   by the sub-section's indicator. Same data source as the single-indicator view
+   (kpi.by_daerah rows already carry rates+status for every indicator), just
+   rendered four times. `dense` shrinks sizing for the narrow inline panel; the
+   FocusOverlay passes dense={false} for the roomier expanded view. Iterates the
+   present-only `indicators` list (same source the top KPI cards use) so a dataset
+   missing an indicator simply omits that section rather than rendering a raw key
+   heading at 0%. */
+function DaerahByIndicators({ rows, indicators, lang, unknownArea, dense }: {
+  rows: GroupRow[];
+  indicators: IndicatorKpi[];
+  lang: 'en' | 'bm';
+  unknownArea: string;
+  dense: boolean;
+}) {
+  return (
+    <>
+      {indicators.map((ind, idx) => {
+        const key = ind.key;
+        const heading = lang === 'en' ? ind.label_en : ind.label_bm;
+        const sorted = [...rows].sort(
+          (a, b) => Number(b.rates[key] ?? 0) - Number(a.rates[key] ?? 0),
+        );
+        return (
+          <div key={key} style={{ marginBottom: idx < indicators.length - 1 ? (dense ? 18 : 24) : 0 }}>
+            <div style={{
+              fontSize: dense ? 11 : 12.5, fontWeight: 700, color: 'var(--text-primary)',
+              marginBottom: dense ? 8 : 10,
+            }}>
+              {heading}
+            </div>
+            {sorted.map(s => {
+              const v = Number(s.rates[key] ?? 0);
+              const label = s.district || unknownArea;
+              return (
+                <div key={`${key}:${label}`} style={{ marginBottom: dense ? 8 : 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: dense ? 12 : 13, color: 'var(--text-secondary)', marginBottom: dense ? 3 : 4 }}>
+                    <span>{label}</span>
+                    <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                      <span style={{ fontSize: dense ? 10 : 11, color: 'var(--text-muted)' }}>n={s.n.toLocaleString()}</span>
+                      <span style={{ fontWeight: 600 }}>{v.toFixed(2)}%</span>
+                    </span>
+                  </div>
+                  <div style={{ height: dense ? 8 : 10, background: ragTrack(s.status[key]), borderRadius: dense ? 4 : 5 }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, v)}%`, background: ragSolid(s.status[key]), borderRadius: dense ? 4 : 5 }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /* Demographic-label localisation now lives in lib/labels.ts so the Dashboard
    and Geo & Risk breakdowns translate identically. */
 
@@ -321,6 +395,23 @@ export function DashboardPage() {
   const sortedStates = [...breakdownRows].sort(
     (a, b) => Number(b.rates[selectedIndicator] ?? 0) - Number(a.rates[selectedIndicator] ?? 0),
   );
+
+  /* Right-panel modes:
+     · showStateIndicators — a state is selected but the dataset has no daerah
+       column to drill into, so fall back to that state's 4 indicators vs target.
+     · drilledToDaerah     — state selected AND daerah data exists → per-AREA
+       ranked breakdown of the selected indicator (the top KPI cards already
+       carry the state's 4-vs-target view, so this never duplicates them).
+     · neither             — national view → per-STATE ranked breakdown of the
+       selected indicator. */
+  const showStateIndicators = !!selectedStateCode && !drilledToDaerah && indicators.length > 0;
+  const indicatorLabel = selInd ? (lang === 'en' ? selInd.label_en : selInd.label_bm) : '';
+  const panelTitle = showStateIndicators
+    ? `${codeToStateName(selectedStateCode!)} · ${t('All Indicators', 'Semua Penunjuk')}`
+    : drilledToDaerah
+      ? `${codeToStateName(selectedStateCode!)} · ${t('By Area', 'Mengikut Kawasan')} · ${t('All Indicators', 'Semua Penunjuk')}`
+      : `${t('By State', 'Mengikut Negeri')}${indicatorLabel ? ` · ${indicatorLabel}` : ''}`;
+  const unknownArea = t('Unknown', 'Tidak diketahui');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -489,7 +580,7 @@ export function DashboardPage() {
                       (selected uses a larger serif numeral). */}
                   <div style={{ minHeight: 38, display: 'flex', alignItems: 'flex-end' }}>
                     <span style={{
-                      fontFamily: sel ? 'var(--font-display)' : 'var(--font-body)',
+                      fontFamily: 'var(--font-body)',
                       fontSize: sel ? 32 : 25, fontWeight: 700, color: 'var(--text-primary)',
                       fontVariantNumeric: 'tabular-nums', lineHeight: 1,
                     }}>
@@ -499,7 +590,7 @@ export function DashboardPage() {
                   {/* value-vs-target bar — tick = target; fill beyond it = above target (worse) */}
                   <div style={{ position: 'relative', height: 6, background: 'var(--surface-3)', borderRadius: 3, marginTop: 1, marginBottom: 18 }} aria-hidden>
                     <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${fillPct}%`, background: ragColor, borderRadius: 3 }} />
-                    <div style={{ position: 'absolute', left: `${TICK}%`, top: -3, height: 12, width: 2, background: 'var(--text-secondary)', borderRadius: 1 }} />
+                    <TargetTick leftPct={TICK} />
                     <div style={{ position: 'absolute', left: `${TICK}%`, top: 14, transform: 'translateX(-50%)', fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                       {t('Target', 'Sasaran')}
                     </div>
@@ -578,16 +669,9 @@ export function DashboardPage() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-              {selectedStateCode && indicators.length > 0
-                ? `${codeToStateName(selectedStateCode)} · ${t('All Indicators', 'Semua Penunjuk')}`
-                : drilledToDaerah
-                  ? `${t('By Daerah', 'Mengikut Daerah')} — ${codeToStateName(selectedStateCode!)}`
-                  : t('By State', 'Mengikut Negeri')}
-              {!(selectedStateCode && indicators.length > 0) && selInd
-                ? ` · ${lang === 'en' ? selInd.label_en : selInd.label_bm}`
-                : ''}
+              {panelTitle}
             </div>
-            {(selectedStateCode ? indicators.length > 0 : sortedStates.length > 0) && (
+            {(showStateIndicators ? indicators.length > 0 : sortedStates.length > 0) && (
               <button
                 onClick={() => setPanelFocus(true)}
                 aria-label={t('Expand panel', 'Kembangkan panel')}
@@ -598,7 +682,7 @@ export function DashboardPage() {
               </button>
             )}
           </div>
-          {selectedStateCode && indicators.length > 0 ? (
+          {showStateIndicators ? (
             indicators.map(ind => {
               const rl: RagLevel = ind.rag === 'Green' ? 'good' : ind.rag === 'Amber' ? 'warning' : 'critical';
               const rc = ind.rag === 'Green' ? 'var(--status-good)' : ind.rag === 'Amber' ? 'var(--status-watch)' : 'var(--status-critical)';
@@ -618,17 +702,20 @@ export function DashboardPage() {
                       <RagBadge rag={rl} lang={lang} />
                     </div>
                   </div>
-                  <div style={{ height: 6, background: 'var(--surface-3)', borderRadius: 3 }}>
+                  <div style={{ position: 'relative', height: 6, background: 'var(--surface-3)', borderRadius: 3 }}>
                     <div style={{ height: '100%', width: `${fp}%`, background: rc, borderRadius: 3 }} />
+                    <TargetTick leftPct={70} />
                   </div>
                 </div>
               );
             })
+          ) : drilledToDaerah ? (
+            <DaerahByIndicators rows={breakdownRows} indicators={indicators} lang={lang} unknownArea={unknownArea} dense />
           ) : (
             <>
               {sortedStates.map(s => {
                 const v = Number(s.rates[selectedIndicator] ?? 0);
-                const label = breakdownKey === 'district' ? s.district : s.state;
+                const label = breakdownKey === 'district' ? (s.district || unknownArea) : s.state;
                 return (
                   <div key={`${breakdownKey}:${label}`} style={{ marginBottom: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 3 }}>
@@ -655,13 +742,9 @@ export function DashboardPage() {
         <FocusOverlay
           open={panelFocus}
           onClose={() => setPanelFocus(false)}
-          title={selectedStateCode && indicators.length > 0
-            ? `${codeToStateName(selectedStateCode)} · ${t('All Indicators', 'Semua Penunjuk')}`
-            : drilledToDaerah
-              ? `${t('By Daerah', 'Mengikut Daerah')} — ${codeToStateName(selectedStateCode!)}`
-              : t('By State', 'Mengikut Negeri')}
+          title={panelTitle}
         >
-          {selectedStateCode && indicators.length > 0 ? (
+          {showStateIndicators ? (
             indicators.map(ind => {
               const rl: RagLevel = ind.rag === 'Green' ? 'good' : ind.rag === 'Amber' ? 'warning' : 'critical';
               const rc = ind.rag === 'Green' ? 'var(--status-good)' : ind.rag === 'Amber' ? 'var(--status-watch)' : 'var(--status-critical)';
@@ -681,17 +764,20 @@ export function DashboardPage() {
                       <RagBadge rag={rl} lang={lang} />
                     </div>
                   </div>
-                  <div style={{ height: 8, background: 'var(--surface-3)', borderRadius: 4 }}>
+                  <div style={{ position: 'relative', height: 8, background: 'var(--surface-3)', borderRadius: 4 }}>
                     <div style={{ height: '100%', width: `${fp}%`, background: rc, borderRadius: 4 }} />
+                    <TargetTick leftPct={70} />
                   </div>
                 </div>
               );
             })
+          ) : drilledToDaerah ? (
+            <DaerahByIndicators rows={breakdownRows} indicators={indicators} lang={lang} unknownArea={unknownArea} dense={false} />
           ) : (
             <>
               {sortedStates.map(s => {
                 const v = Number(s.rates[selectedIndicator] ?? 0);
-                const label = breakdownKey === 'district' ? s.district : s.state;
+                const label = breakdownKey === 'district' ? (s.district || unknownArea) : s.state;
                 return (
                   <div key={`${breakdownKey}:${label}`} style={{ marginBottom: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>

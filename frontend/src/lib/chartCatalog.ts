@@ -34,11 +34,11 @@ export const CHART_CATALOG: ChartCatalogEntry[] = [
   { key: 'waz_distribution',                     titleEn: 'WAZ z-score distribution',           titleBm: 'Taburan z-skor WAZ',                shape: 'histogram', home: 'geo', recommended: true },
   { key: 'haz_distribution',                     titleEn: 'HAZ z-score distribution',           titleBm: 'Taburan z-skor HAZ',                shape: 'histogram', home: 'geo', recommended: true },
   { key: 'baz_distribution',                     titleEn: 'BAZ z-score distribution',           titleBm: 'Taburan z-skor BAZ',                shape: 'histogram', home: 'geo', recommended: true },
-  { key: 'scatter_berat_kg_vs_tinggi_cm',        titleEn: 'Weight vs Height',                   titleBm: 'Berat lwn Tinggi',                  shape: 'scatter',   home: 'geo', recommended: true },
-  { key: 'scatter_bmi_vs_age_months_computed',   titleEn: 'BMI vs Age',                         titleBm: 'BMI lwn Umur',                      shape: 'scatter',   home: 'geo', recommended: true },
-  { key: 'scatter_waz_vs_age_months_computed',   titleEn: 'WAZ vs Age',                         titleBm: 'WAZ lwn Umur',                      shape: 'scatter',   home: 'geo', recommended: true },
-  { key: 'scatter_haz_vs_age_months_computed',   titleEn: 'HAZ vs Age',                         titleBm: 'HAZ lwn Umur',                      shape: 'scatter',   home: 'geo', recommended: true },
-  { key: 'scatter_baz_vs_age_months_computed',   titleEn: 'BAZ vs Age',                         titleBm: 'BAZ lwn Umur',                      shape: 'scatter',   home: 'geo', recommended: true },
+  { key: 'scatter_berat_kg_vs_tinggi_cm',        titleEn: 'Weight vs Height',                   titleBm: 'Berat lwn Tinggi',                  shape: 'scatter',   home: 'geo', recommended: false },
+  { key: 'scatter_bmi_vs_age_months_computed',   titleEn: 'BMI vs Age',                         titleBm: 'BMI lwn Umur',                      shape: 'scatter',   home: 'geo', recommended: false },
+  { key: 'scatter_waz_vs_age_months_computed',   titleEn: 'WAZ vs Age',                         titleBm: 'WAZ lwn Umur',                      shape: 'scatter',   home: 'geo', recommended: false },
+  { key: 'scatter_haz_vs_age_months_computed',   titleEn: 'HAZ vs Age',                         titleBm: 'HAZ lwn Umur',                      shape: 'scatter',   home: 'geo', recommended: false },
+  { key: 'scatter_baz_vs_age_months_computed',   titleEn: 'BAZ vs Age',                         titleBm: 'BAZ lwn Umur',                      shape: 'scatter',   home: 'geo', recommended: false },
 
   // ── QualityPage "Classification breakdown" ────────────────────────────────
   { key: 'status_bmi_pie',  titleEn: 'BMI status',                     titleBm: 'Status BMI',                     shape: 'pie_array',    home: 'quality', recommended: true },

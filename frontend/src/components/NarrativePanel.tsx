@@ -10,6 +10,9 @@ export interface NarrativeRecommendation {
   priority?: string;
   bm?: string;
   en?: string;
+  /** Bilingual reasoning fields (new). Fall back to legacy `reasoning` for cached narratives. */
+  reasoning_en?: string;
+  reasoning_bm?: string;
   reasoning?: string;
 }
 
@@ -109,7 +112,9 @@ export function NarrativePanel({ raw }: { raw: NarrativeRaw }) {
               const body = lang === 'en'
                 ? (cleanField(r.en) || cleanField(r.bm))
                 : (cleanField(r.bm) || cleanField(r.en));
-              const reasoning = cleanField(r.reasoning);
+              const reasoning = lang === 'en'
+                ? (cleanField(r.reasoning_en) || cleanField(r.reasoning))
+                : (cleanField(r.reasoning_bm) || cleanField(r.reasoning_en) || cleanField(r.reasoning));
               return (
                 <div key={i} style={{ borderLeft: `3px solid ${prioColor(r.priority)}`, paddingLeft: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
