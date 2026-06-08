@@ -128,11 +128,17 @@ export function ChoroplethMap({ districts, selectedDistrict, onDistrictClick }: 
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
+      {/* viewBox height cropped to the geography's true vertical extent. The
+         districts span lat 0.855–7.361 → ~273 SVG units tall (scale 2400),
+         mercator-centred at lat ~4.1. The old height=360 / center[1]=3.8 left
+         ~87 units of empty southern ocean that rendered as a blank gap above
+         the legend. height=300 + center[1]=4.1 re-frames Malaysia with ~13
+         units of margin each side — no state clips. */}
       <ComposableMap
         projection="geoMercator"
-        projectionConfig={{ center: [109.5, 3.8], scale: 2400 }}
+        projectionConfig={{ center: [109.5, 4.1], scale: 2400 }}
         width={800}
-        height={360}
+        height={300}
         style={{ width: '100%', height: 'auto', display: 'block' }}
       >
         <Geographies geography="/my-districts.json">

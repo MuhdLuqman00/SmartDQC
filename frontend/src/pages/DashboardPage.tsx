@@ -666,6 +666,13 @@ export function DashboardPage() {
         <div style={{
           flex: '1 1 360px', background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 'var(--radius-card)', padding: 20, boxShadow: 'var(--shadow-card)',
+          /* maxHeight is tuned just under the map card's natural height so this
+             panel never out-grows it and forces the map to stretch (which would
+             re-open the blank gap under the legend). The map card is fluid
+             (SVG width:100%/height:auto ≈ innerWidth×300/800 + chrome ≈ 305–342px
+             at typical widths), so this fixed cap is a best-fit, not exact —
+             nudge down if a gap reappears at narrow viewports. */
+          display: 'flex', flexDirection: 'column', maxHeight: 320,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
@@ -682,6 +689,9 @@ export function DashboardPage() {
               </button>
             )}
           </div>
+          {/* Scrollable content: caps the 16-state list so it no longer drives
+             the flex-row height and stretches the map card. Header stays pinned. */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {showStateIndicators ? (
             indicators.map(ind => {
               const rl: RagLevel = ind.rag === 'Green' ? 'good' : ind.rag === 'Amber' ? 'warning' : 'critical';
@@ -738,6 +748,7 @@ export function DashboardPage() {
               )}
             </>
           )}
+          </div>
         </div>
         <FocusOverlay
           open={panelFocus}

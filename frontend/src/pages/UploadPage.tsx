@@ -285,7 +285,7 @@ export function UploadPage() {
           a subordinate guide rail fills the empty canvas with real guidance
           (audit 02). Wraps to a single column on narrow widths. */}
       {step === 1 && (
-        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', flexWrap: 'wrap' }}>
         <div style={{
           flex: '1 1 440px', minWidth: 0,
           background: 'var(--surface)', border: '1px solid var(--border)',
