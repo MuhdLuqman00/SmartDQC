@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Download, Search, Pencil } from 'lucide-react';
+import { Download, Search, Pencil, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
@@ -46,6 +46,7 @@ export function ExplorerPage() {
   const rows = localRows ?? baseRows;
   const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   const effectiveRowCount = rowCount ?? serverRowCount;
+  const isTruncated = effectiveRowCount != null && rows.length < effectiveRowCount;
 
   const numericColumns = useMemo(
     () => columns.filter(c =>
@@ -108,7 +109,6 @@ export function ExplorerPage() {
           </span>
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             {effectiveRowCount?.toLocaleString() ?? '—'} {t('rows', 'baris')}
-            {rows.length < (effectiveRowCount ?? 0) ? ` · ${t('showing first', 'menunjukkan')} ${rows.length}` : ''}
           </span>
           <div style={{ flex: 1 }} />
           <a
@@ -148,6 +148,32 @@ export function ExplorerPage() {
             }}
           />
         </div>
+
+        {/* Truncation banner — visible when loaded rows < total rows */}
+        {isTruncated && (
+          <div
+            role="alert"
+            aria-live="polite"
+            style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              background: 'var(--warning-bg, #fffbeb)', border: '1px solid var(--warning)',
+              borderRadius: 8, padding: '10px 14px', fontSize: 13,
+              color: 'var(--text-primary)',
+            }}
+          >
+            <AlertTriangle size={16} style={{ color: 'var(--warning)', flexShrink: 0, marginTop: 1 }} aria-hidden />
+            <span>
+              <strong style={{ color: 'var(--warning)' }}>
+                {t('Partial view', 'Paparan separa')}:
+              </strong>
+              {' '}
+              {t(
+                `Showing first ${rows.length.toLocaleString()} of ${effectiveRowCount!.toLocaleString()} rows. Use search or Download to reach the rest.`,
+                `Menunjukkan ${rows.length.toLocaleString()} daripada ${effectiveRowCount!.toLocaleString()} baris. Guna carian atau Muat Turun untuk selebihnya.`,
+              )}
+            </span>
+          </div>
+        )}
 
         {/* Table */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', overflow: 'auto', boxShadow: 'var(--shadow-card)' }}>
@@ -259,6 +285,11 @@ export function ExplorerPage() {
             <button aria-label={t('Previous page', 'Halaman sebelumnya')} disabled={page === 0} onClick={() => setPage(p => p - 1)} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-btn)', padding: '6px 12px', cursor: page === 0 ? 'not-allowed' : 'pointer', opacity: page === 0 ? 0.4 : 1, color: 'var(--text-primary)', fontSize: 13 }}>←</button>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
               {t('Page', 'Halaman')} {page + 1} / {totalPages}
+              {isTruncated && (
+                <span style={{ color: 'var(--warning)', marginLeft: 6, fontSize: 11, fontWeight: 600 }}>
+                  ({t(`first ${rows.length.toLocaleString()} loaded`, `${rows.length.toLocaleString()} baris pertama dimuatkan`)})
+                </span>
+              )}
             </span>
             <button aria-label={t('Next page', 'Halaman seterusnya')} disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-btn)', padding: '6px 12px', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', opacity: page >= totalPages - 1 ? 0.4 : 1, color: 'var(--text-primary)', fontSize: 13 }}>→</button>
           </div>
