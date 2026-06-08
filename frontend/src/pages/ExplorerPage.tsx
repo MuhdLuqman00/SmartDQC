@@ -6,6 +6,7 @@ import { useSession } from '../context/SessionContext';
 import { SessionGuard } from '../components/SessionGuard';
 import { ColumnHistogram } from '../components/ColumnHistogram';
 import { ErrorRetry } from '../components/ErrorRetry';
+import { classifyCell, cellFlagStyle } from '../utils/cellFlags';
 
 const PAGE_SIZE = 50;
 
@@ -175,6 +176,23 @@ export function ExplorerPage() {
           </div>
         )}
 
+        {/* Conditional-formatting legend */}
+        {columns.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {t('Cell highlight', 'Sorotan sel')}:
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--danger-bg)', border: '1px solid var(--danger)', borderRadius: 4, padding: '2px 8px', fontSize: 11 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--danger)', display: 'inline-block', flexShrink: 0 }} aria-hidden />
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{t('Impossible value', 'Nilai mustahil')}</span>
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--warning-bg)', border: '1px solid var(--warning)', borderRadius: 4, padding: '2px 8px', fontSize: 11 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--warning)', display: 'inline-block', flexShrink: 0 }} aria-hidden />
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{t('Out of range / missing', 'Di luar julat / tiada nilai')}</span>
+            </span>
+          </div>
+        )}
+
         {/* Table */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', overflow: 'auto', boxShadow: 'var(--shadow-card)' }}>
           {fetchError ? (
@@ -208,12 +226,20 @@ export function ExplorerPage() {
                     {columns.map(c => {
                       const absIdx = page * PAGE_SIZE + i;
                       const isEditing = editing?.rowIdx === absIdx && editing?.col === c;
+                      const flag = classifyCell(c, row[c]);
+                      const isNumeric = numericColumns.includes(c);
+                      const flagLabel = flag === 'danger'
+                        ? t('Impossible value', 'Nilai mustahil')
+                        : flag === 'warn'
+                          ? t('Out of range or missing', 'Di luar julat atau tiada nilai')
+                          : undefined;
                       return (
                         <td
                           key={c}
                           className={`explorer-cell${editable && !isEditing ? ' editable' : ''}`}
                           tabIndex={editable && !isEditing ? 0 : undefined}
                           aria-describedby={editable && !isEditing ? 'explorer-edit-hint' : undefined}
+                          aria-label={flagLabel ? `${c}: ${String(row[c] ?? '')} — ${flagLabel}` : undefined}
                           onDoubleClick={() => {
                             if (!editable) return;
                             setEditing({ rowIdx: absIdx, col: c });
@@ -227,7 +253,12 @@ export function ExplorerPage() {
                               setEditValue(row[c] == null ? '' : String(row[c]));
                             }
                           }}
-                          style={{ padding: '9px 14px', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}
+                          style={{
+                            padding: '9px 14px', color: 'var(--text-primary)',
+                            fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
+                            textAlign: isNumeric ? 'right' : 'left',
+                            ...cellFlagStyle(flag),
+                          }}
                         >
                           {isEditing ? (
                             <input
