@@ -1422,6 +1422,8 @@ def _compute_row_flags(df: "pd.DataFrame") -> "pd.Series":
         return df["Data_Quality_Flag"] != "Valid"
 
     flagged = pd.Series(False, index=df.index)
+    if "review_reason" in df.columns:
+        flagged |= df["review_reason"].fillna("").astype(str).str.strip().ne("")
     for col in df.columns:
         c = col.lower()
         if "berat" in c and "kg" in c:
@@ -2038,13 +2040,6 @@ async def clean_run_endpoint(
             db=db,
             name=(body.dataset_name if body else None),
         )
-        # P2-2: Auto-persist child records to durable store (best-effort)
-        # Convert cleaned DF to records format for persistence
-        child_recs = _records_from_cached(
-            new_cache_id, dataset_id=new_cache_id, source_type=effective_type
-        )
-        if child_recs:
-            _persist_child_records(db, new_cache_id, effective_type, child_recs)
     except Exception as exc:  # best-effort — never fail the clean run on a DB error
         persisted = False
         persist_error = f"{type(exc).__name__}: {exc}"
@@ -2053,6 +2048,24 @@ async def clean_run_endpoint(
             "NOT appear on the dashboard until the database is reachable.",
             new_cache_id,
             persist_error,
+        )
+
+    # P2-2: Auto-persist child records to the durable linkage store — isolated
+    # best-effort. A failure here must NEVER flip the session `persisted` flag
+    # above (that flag reflects only whether the dataset will reach the dashboard).
+    try:
+        child_recs = _records_from_cached(
+            new_cache_id, dataset_id=new_cache_id, source_type=effective_type
+        )
+        if child_recs:
+            _persist_child_records(db, new_cache_id, effective_type, child_recs)
+    except Exception as exc:  # noqa: BLE001 — best-effort, log and move on
+        logger.warning(
+            "Child-record persistence failed for cache_id=%s (%s: %s); durable "
+            "linkage store not updated for this dataset.",
+            new_cache_id,
+            type(exc).__name__,
+            exc,
         )
 
     # Build the full evaluated-rule set for this cleaner type so Quality
