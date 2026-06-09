@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
-import { Upload, CheckCircle2, AlertCircle, ChevronRight, ChevronLeft, ChevronDown, RefreshCw } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, ChevronRight, ChevronLeft, ChevronDown, RefreshCw, Info } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
@@ -25,6 +25,7 @@ interface CleanStats {
   top_issues: Issue[];
   rules_evaluated?: EvaluatedRule[];  // B2.2 — full check set with row counts
   cleaned_columns?: string[];          // B2.2 — to surface computed columns added
+  excluded_count?: number;             // flag-then-filter — rows set aside, not deleted
 }
 
 /* B2.1 — pre-clean profile + actionable findings from /clean/quality-check. */
@@ -330,6 +331,7 @@ export function UploadPage() {
         top_issues: Array.isArray(r.data.top_issues) ? r.data.top_issues : [],
         rules_evaluated: Array.isArray(r.data.rules_evaluated) ? r.data.rules_evaluated : undefined,
         cleaned_columns: Array.isArray(r.data.cleaned_columns) ? r.data.cleaned_columns : undefined,
+        excluded_count: Number(r.data.excluded_count) || 0,
       });
       setPersistWarn(persistWarning(r.data, lang));
       setSession({
@@ -1066,6 +1068,44 @@ export function UploadPage() {
             ))}
           </div>
 
+          {/* Flag-then-filter — honest denominator: flagged rows are set aside,
+              not deleted, so the user understands what the rates are based on. */}
+          {Number(cleanStats.excluded_count) > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              background: 'var(--surface-2)', color: 'var(--text-secondary)',
+              border: '1px solid var(--border)', borderRadius: 8,
+              padding: '12px 16px', marginBottom: 20, fontSize: 13, lineHeight: 1.6,
+            }}>
+              <Info size={16} style={{ flexShrink: 0, marginTop: 2, color: 'var(--text-muted)' }} />
+              <span>
+                {t(
+                  `Quality rates are based on ${Number(cleanStats.rows_after).toLocaleString()} of ${Number(cleanStats.rows_before).toLocaleString()} records. ${Number(cleanStats.excluded_count).toLocaleString()} were set aside for failing quality checks — they are flagged, not deleted, and remain in the full download.`,
+                  `Kadar kualiti berdasarkan ${Number(cleanStats.rows_after).toLocaleString()} daripada ${Number(cleanStats.rows_before).toLocaleString()} rekod. ${Number(cleanStats.excluded_count).toLocaleString()} diketepikan kerana gagal semakan kualiti — ia ditanda, bukan dipadam, dan kekal dalam muat turun penuh.`,
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* Detection-uncertainty notice — the schema was not confidently matched
+              to a known format, so generic rules were applied. */}
+          {detectedType === 'general' && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              background: 'var(--warning-bg)', color: 'var(--text-secondary)',
+              border: '1px solid var(--warning)', borderRadius: 8,
+              padding: '12px 16px', marginBottom: 20, fontSize: 13, lineHeight: 1.6,
+            }}>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2, color: 'var(--warning)' }} />
+              <span>
+                {t(
+                  'This file was not confidently matched to a known schema, so general-purpose cleaning rules were applied. Review the results before using them for official reporting.',
+                  'Fail ini tidak dapat dipadankan dengan yakin kepada skema yang dikenali, jadi peraturan pembersihan umum digunakan. Semak keputusan sebelum digunakan untuk pelaporan rasmi.',
+                )}
+              </span>
+            </div>
+          )}
+
           {/* ── B2.2 "What changed" — before/after delta from rules_evaluated ── */}
           {(() => {
             const evaluated = cleanStats.rules_evaluated ?? [];
@@ -1175,16 +1215,24 @@ export function UploadPage() {
             );
           })()}
 
+          {/* Two views: "Cleaned" = analyzable rows only (what analytics use);
+              "Full" = every row plus the flag columns for auditing exclusions.
+              NB: the cached endpoint reads `fmt` (not `format`) and `view`. */}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-            <a href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/clean/download-cached/${cacheId}?format=csv`}
+            <a href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/clean/download-cached/${cacheId}?fmt=csv&view=analysis`}
               target="_blank" rel="noreferrer"
               style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-btn)', padding: '8px 16px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-              ↓ CSV
+              ↓ {t('Cleaned CSV', 'CSV Bersih')}
             </a>
-            <a href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/clean/download-cached/${cacheId}?format=xlsx`}
+            <a href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/clean/download-cached/${cacheId}?fmt=xlsx&view=analysis`}
               target="_blank" rel="noreferrer"
               style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-btn)', padding: '8px 16px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-              ↓ XLSX
+              ↓ {t('Cleaned XLSX', 'XLSX Bersih')}
+            </a>
+            <a href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/clean/download-cached/${cacheId}?fmt=xlsx&view=full`}
+              target="_blank" rel="noreferrer"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-btn)', padding: '8px 16px', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
+              ↓ {t('Full + flagged (XLSX)', 'Penuh + ditanda (XLSX)')}
             </a>
             <a href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/clean/download-report/${cacheId}`}
               target="_blank" rel="noreferrer"

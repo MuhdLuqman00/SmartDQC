@@ -701,5 +701,12 @@ def run_eda_auto(df: pd.DataFrame, source_type: str, **kwargs) -> dict:
     """
     from ..config import auto_suggest_mapping
 
+    # Flag-then-filter: cleaned frames carry an `analyzable` column. Score the
+    # rubric/indicators over analyzable rows only so the narrative and report
+    # denominators match the KPI dashboard (which filters the same way). Raw
+    # frames without the column pass through unchanged.
+    if "analyzable" in df.columns:
+        df = df[df["analyzable"]]
+
     mapping = auto_suggest_mapping(list(df.columns), source_type) or {}
     return run_eda(df, mapping, source_type, **kwargs)

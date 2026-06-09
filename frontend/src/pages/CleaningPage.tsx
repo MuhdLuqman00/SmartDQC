@@ -51,8 +51,8 @@ export function CleaningPage() {
   };
 
   const downloads = [
-    { icon: <Download size={15} />,        label: 'CSV',  href: `${BASE}/clean/download-cached/${cacheId}?format=csv` },
-    { icon: <FileSpreadsheet size={15} />,  label: 'XLSX', href: `${BASE}/clean/download-cached/${cacheId}?format=xlsx` },
+    { icon: <Download size={15} />,        label: 'CSV',  href: `${BASE}/clean/download-cached/${cacheId}?fmt=csv&view=analysis` },
+    { icon: <FileSpreadsheet size={15} />,  label: 'XLSX', href: `${BASE}/clean/download-cached/${cacheId}?fmt=xlsx&view=analysis` },
     { icon: <Table2 size={15} />,           label: t('Quality Report', 'Laporan Kualiti'), href: `${BASE}/clean/download-report/${cacheId}` },
   ];
 

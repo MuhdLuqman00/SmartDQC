@@ -1244,6 +1244,44 @@ def _compute_row_flags(df: "pd.DataFrame") -> "pd.Series":
     return flagged
 
 
+# ── Flag-then-filter view projections ────────────────────────────────────────
+# Cleaners now return the FULL frame plus two bookkeeping columns:
+#   analyzable     (bool) — row passed every quality rule
+#   exclude_reason (str)  — semicolon-joined rule codes that excluded the row
+# These are internal bookkeeping, not user-facing data. The cache holds the full
+# frame (source of truth for KPI, reports, the "full" download), and each read
+# boundary projects to the view it needs.
+_FLAG_COLS = ("analyzable", "exclude_reason")
+
+
+def _analysis_view(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Analysis projection: analyzable rows only, both flag columns dropped.
+
+    Reproduces the pre-flag-then-filter (drop-based) export exactly — the
+    cleaners used to physically drop these rows, so this is what downloads and
+    analytics consumed before the refactor. Frames without the flag columns
+    (old callers / already-clean frames) pass through unchanged.
+    """
+    if "analyzable" in df.columns:
+        df = df[df["analyzable"]]
+    drop = [c for c in _FLAG_COLS if c in df.columns]
+    return df.drop(columns=drop) if drop else df
+
+
+def _download_view(df: "pd.DataFrame", view: str) -> "pd.DataFrame":
+    """Project a cached frame for download. ``full`` keeps every row + both
+    flag columns; ``analysis`` (default) returns clean rows only."""
+    return df if view == "full" else _analysis_view(df)
+
+
+def _explorer_view(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Explorer projection: keep ALL rows (Trust→Correct→Export, and because
+    row-edit ids are positional into the cached frame — dropping rows would
+    desync them). Surface ``exclude_reason`` (the per-row 'why'), hide the
+    redundant ``analyzable`` bool."""
+    return df.drop(columns=["analyzable"]) if "analyzable" in df.columns else df
+
+
 def _cache_set_narrative(key: str, narrative: dict) -> None:
     """Persist the AI narrative alongside the cleaned-data cache entry.
 
@@ -1756,6 +1794,15 @@ async def clean_run_endpoint(
     # Convert cleaned data to records
     cleaned_records = cleaned_df.replace({np.nan: None}).to_dict(orient="records")
 
+    # Flag-then-filter: count of rows set aside (flagged, not deleted) so the UI
+    # can show an honest denominator — "rates based on N of M records". The rows
+    # themselves stay available via the full export and are summarised per-rule
+    # in the Quality Report's "Records Dropped" tab.
+    if "analyzable" in cleaned_df.columns:
+        excluded_count = int((~cleaned_df["analyzable"]).sum())
+    else:
+        excluded_count = 0
+
     # Cache cleaned DF (durable) with enriched stats so downstream pages
     # (Explorer, KPI map, AI narrative) can resolve it by cache_id later.
     new_cache_id = _cache_cleaned(
@@ -1822,6 +1869,7 @@ async def clean_run_endpoint(
                 "cache_id": new_cache_id,
                 "rows_before": len(df),
                 "rows_after": stats.get("final_count", len(cleaned_df)),
+                "excluded_count": excluded_count,
                 "quality_score": quality_score,
                 "quality_grade": quality_grade,
                 "rules_applied": summary["rules_applied"],
@@ -1923,8 +1971,13 @@ async def clean_download_endpoint(
     data_type: str = "myvass",
     sheet: Optional[str] = None,
     fmt: str = Query("xlsx", pattern="^(csv|xlsx)$"),
+    view: str = Query("analysis", pattern="^(analysis|full)$"),
 ):
-    """Download cleaned data as CSV or Excel."""
+    """Download cleaned data as CSV or Excel.
+
+    ``view=analysis`` (default) = analyzable rows only, flag columns dropped;
+    ``view=full`` = every row plus ``analyzable``/``exclude_reason``.
+    """
     content = await file.read()
     filename = file.filename or ""
     try:
@@ -1940,6 +1993,7 @@ async def clean_download_endpoint(
     if stats.get("final_count", len(cleaned_df)) == 0:
         raise HTTPException(422, "No data after cleaning")
 
+    cleaned_df = _download_view(cleaned_df, view)
     base = filename.rsplit(".", 1)[0]
     timestamp = pd.Timestamp.now().strftime("%Y%m%d")
 
@@ -2102,8 +2156,12 @@ async def clean_download_multi_endpoint(
     ic_col: str = Query("IC_NO_PASSPORT"),
     dose_date_col: str = Query("DOSE_DATE"),
     fmt: str = Query("xlsx", pattern="^(csv|xlsx)$"),
+    view: str = Query("analysis", pattern="^(analysis|full)$"),
 ):
-    """Merge multiple files, clean, and download."""
+    """Merge multiple files, clean, and download.
+
+    ``view`` follows the same analysis/full contract as ``/clean/download``.
+    """
     file_contents = []
     for f in files:
         content = await f.read()
@@ -2122,6 +2180,7 @@ async def clean_download_multi_endpoint(
     if stats.get("final_count", len(cleaned_df)) == 0:
         raise HTTPException(422, "No data after cleaning")
 
+    cleaned_df = _download_view(cleaned_df, view)
     timestamp = pd.Timestamp.now().strftime("%Y%m%d")
 
     if fmt == "xlsx":
@@ -2165,12 +2224,19 @@ async def download_cached_endpoint(
     cache_id: str,
     fmt: str = Query("xlsx", pattern="^(csv|xlsx)$"),
     data_type: str = Query("myvass"),
+    view: str = Query("analysis", pattern="^(analysis|full)$"),
 ):
-    """Download previously cleaned data from cache — no file re-upload needed."""
+    """Download previously cleaned data from cache — no file re-upload needed.
+
+    ``view=analysis`` (default) returns analyzable rows only, without the
+    internal flag columns — what users expect when they ask for "cleaned data".
+    ``view=full`` returns every row plus ``analyzable``/``exclude_reason`` so an
+    analyst can audit exactly which rows were excluded and why.
+    """
     entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(404, "Cached data not found — please re-run cleaning.")
-    cleaned_df = entry["df"]
+    cleaned_df = _download_view(entry["df"], view)
 
     timestamp = pd.Timestamp.now().strftime("%Y%m%d")
 
@@ -2210,7 +2276,7 @@ async def preview_cached_endpoint(
     entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(404, "Cached data not found — please re-run cleaning.")
-    df = entry["df"]
+    df = _explorer_view(entry["df"])
     head = df.head(limit)
     rows = head.replace({np.nan: None}).to_dict(orient="records")
     row_flags = _compute_row_flags(head).tolist()
@@ -2249,7 +2315,7 @@ async def query_cached_seam(req: QueryCachedRequest):
     if entry is None:
         raise HTTPException(404, "cache_id not found — please re-run cleaning.")
 
-    df = entry["df"].reset_index(drop=True)
+    df = _explorer_view(entry["df"]).reset_index(drop=True)
     flags = _compute_row_flags(df)
 
     # Embed stable ids and per-row flag before any filter/sort
@@ -2288,18 +2354,23 @@ async def query_cached_seam(req: QueryCachedRequest):
 
 
 @app.get("/clean/download-xlsx/{cache_id}")
-async def download_xlsx_endpoint(cache_id: str):
+async def download_xlsx_endpoint(
+    cache_id: str,
+    view: str = Query("analysis", pattern="^(analysis|full)$"),
+):
     """Download the cleaned dataset as XLSX with IC/text columns typed correctly.
 
     Unlike the generic download-cached endpoint, this forces object-dtype and
     IC-keyword columns to Excel text format (@) so leading zeros in MyKid/IC
     numbers are preserved when the file is opened in Excel.
+
+    ``view`` follows the same analysis/full contract as ``download-cached``.
     """
     entry = _cache_get(cache_id)
     if entry is None:
         raise HTTPException(404, "Cached data not found — please re-run cleaning.")
 
-    df = entry["df"]
+    df = _download_view(entry["df"], view)
     timestamp = pd.Timestamp.now().strftime("%Y%m%d")
     xlsx_bytes = cln_excel_typed(df)
 
@@ -3442,7 +3513,11 @@ async def download_report_endpoint(
     if entry is None:
         raise HTTPException(404, "Cached data not found \u2014 please re-run cleaning.")
 
-    cleaned_df = entry["df"]
+    # Flag-then-filter: the report's analytical sheets (WAZ/HAZ/BAZ pivots,
+    # executive summary) must describe the ANALYZABLE population so they match
+    # the dashboard and the default download. The "Records Dropped" tab reads
+    # its per-rule counts from `stats`, so it is unaffected by this projection.
+    cleaned_df = _analysis_view(entry["df"])
     stats = entry["stats"]
     timestamp = pd.Timestamp.now().strftime("%Y%m%d")
     report_buf = _build_quality_report(cleaned_df, stats, data_type)
