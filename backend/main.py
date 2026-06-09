@@ -1276,6 +1276,55 @@ def _persist_child_records(
     return len(rows)
 
 
+def _records_from_store(
+    db, dataset_ids: list[str] | None = None
+) -> tuple[list[dict], dict]:
+    """P2-3: Read child records from the durable child_record table.
+
+    Returns (records, dataset_created_at_by_id) matching _records_from_cached shape.
+    """
+    from backend.db.models import ChildRecord, Dataset
+
+    query = db.query(ChildRecord)
+    if dataset_ids:
+        query = query.filter(ChildRecord.dataset_id.in_(dataset_ids))
+    rows = query.all()
+
+    # Build dataset lookup for created_at
+    ds_ids = {r.dataset_id for r in rows}
+    ds_lookup = {
+        ds.id: ds.created_at
+        for ds in db.query(Dataset).filter(Dataset.id.in_(ds_ids)).all()
+    }
+
+    out = []
+    for r in rows:
+        rec = {
+            "ic": r.ic_norm,
+            "source_type": r.source_type,
+            "dataset_id": r.dataset_id,
+            "name": r.name,
+            "dob": r.dob,
+            "gender": r.gender,
+            "state": r.state,
+            "district": r.district,
+            "measure_date": r.measure_date,
+            "weight_kg": r.weight_kg,
+            "height_cm": r.height_cm,
+            "bmi": r.bmi,
+            "waz": r.waz,
+            "haz": r.haz,
+            "baz": r.baz,
+        }
+        if r.dataset_id in ds_lookup:
+            rec["_dataset_created_at"] = ds_lookup[r.dataset_id]
+        out.append(rec)
+
+    return out, {
+        ds_id: dt.isoformat() if dt else None for ds_id, dt in ds_lookup.items()
+    }
+
+
 # Clinical bounds mirrored from backend/cleaning/kkm.py — keep in sync.
 _FLAG_BERAT_LOW, _FLAG_BERAT_HIGH = 12.0, 50.0  # BERAT_MIN / BERAT_MAX
 _FLAG_TINGGI_LOW, _FLAG_TINGGI_HIGH = 100.0, 160.0  # TINGGI_MIN / TINGGI_MAX
@@ -4410,6 +4459,70 @@ async def entity_records_sync(req: EntityRecordsSyncRequest, db=Depends(get_db))
             logger.warning("Sync failed for dataset %s: %s", ds_id, exc)
             result[ds_id] = 0
     return {"persisted_counts": result}
+
+
+@app.post("/entity/link/all")
+async def entity_link_all(req: EntityLinkV2Request, db=Depends(get_db)):
+    """P2-3: Link across ALL persisted datasets (or filtered subset).
+
+    Uses the durable child_record store instead of volatile cache.
+    Same response shape as /entity/link/v2.
+    """
+    from backend.db.init_db import SessionLocal
+
+    # Read from durable store
+    with SessionLocal() as db_session:
+        records, dataset_created_at_by_id = _records_from_store(
+            db_session, req.dataset_ids if req.dataset_ids else None
+        )
+
+    if not records:
+        return {
+            "total_groups": 0,
+            "linked_groups": 0,
+            "unlinked": 0,
+            "datasets": [],
+            "profiles": [],
+        }
+
+    # Run v2 linkage
+    groups = link_records_v2(
+        records,
+        fuzzy_ic=req.fuzzy_ic,
+        fuzzy_ic_max_distance=req.fuzzy_ic_max_distance,
+        name_dob_boost=req.name_dob_boost,
+        name_fuzzy=req.name_fuzzy,
+        name_fuzzy_threshold=req.name_fuzzy_threshold,
+        dob_tolerance_days=req.dob_tolerance_days,
+        location_boost=req.location_boost,
+        min_confidence=req.min_confidence,
+        dataset_created_at_by_id=dataset_created_at_by_id,
+    )
+
+    # Build response matching /entity/link/v2 shape
+    datasets_map = {}
+    for rec in records:
+        ds_id = rec["dataset_id"]
+        if ds_id not in datasets_map:
+            datasets_map[ds_id] = {
+                "dataset_id": ds_id,
+                "filename": ds_id,  # Fallback; could enrich from Dataset table
+                "source_type": rec["source_type"],
+                "records": 0,
+            }
+        datasets_map[ds_id]["records"] += 1
+
+    profiles = groups[: req.max_groups] if req.max_groups else groups
+
+    _log_audit(action="entity.link.all", detail=f"linked {len(profiles)} groups")
+
+    return {
+        "total_groups": len(groups),
+        "linked_groups": sum(1 for g in groups if len(g["sources"]) > 1),
+        "unlinked": sum(1 for g in groups if len(g["sources"]) == 1),
+        "datasets": list(datasets_map.values()),
+        "profiles": profiles,
+    }
 
 
 @app.post("/entity/link")
