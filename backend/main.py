@@ -1362,6 +1362,49 @@ def _reconciliation_summary(groups: list[dict]) -> dict:
     }
 
 
+def _persist_linkage_run(
+    db,
+    groups: list[dict],
+    params: dict,
+    dataset_ids: list[str],
+    created_by: int | None = None,
+) -> int:
+    """P2-4: Persist linkage run for audit."""
+    from backend.db.models import LinkageRun, LinkageMember
+
+    run = LinkageRun(
+        params_json=params,
+        dataset_ids=dataset_ids,
+        total_groups=len(groups),
+        linked_groups=sum(1 for g in groups if len(g["sources"]) > 1),
+        created_by=created_by,
+    )
+    db.add(run)
+    db.flush()
+
+    members = []
+    for gi, g in enumerate(groups):
+        for src in g["sources"]:
+            members.append(
+                LinkageMember(
+                    run_id=run.id,
+                    group_index=gi,
+                    ic_norm=_normalise_ic(src.get("ic", "")),
+                    source_type=src["source_type"],
+                    dataset_id=src["dataset_id"],
+                    name=src.get("name"),
+                    dob=src.get("dob"),
+                    confidence=g.get("confidence"),
+                    match_reasons=g.get("match_reasons"),
+                )
+            )
+
+    if members:
+        db.add_all(members)
+    db.commit()
+    return run.id
+
+
 # Clinical bounds mirrored from backend/cleaning/kkm.py — keep in sync.
 _FLAG_BERAT_LOW, _FLAG_BERAT_HIGH = 12.0, 50.0  # BERAT_MIN / BERAT_MAX
 _FLAG_TINGGI_LOW, _FLAG_TINGGI_HIGH = 100.0, 160.0  # TINGGI_MIN / TINGGI_MAX
@@ -4554,7 +4597,32 @@ async def entity_link_all(req: EntityLinkV2Request, db=Depends(get_db)):
     # P2-5: Add reconciliation summary
     reconciliation = _reconciliation_summary(groups)
 
-    _log_audit(action="entity.link.all", detail=f"linked {len(profiles)} groups")
+    # P2-4: Persist linkage run for audit (best-effort)
+    run_id = None
+    try:
+        run_id = _persist_linkage_run(
+            db,
+            groups,
+            params={
+                "fuzzy_ic": req.fuzzy_ic,
+                "fuzzy_ic_max_distance": req.fuzzy_ic_max_distance,
+                "name_dob_boost": req.name_dob_boost,
+                "name_fuzzy": req.name_fuzzy,
+                "name_fuzzy_threshold": req.name_fuzzy_threshold,
+                "dob_tolerance_days": req.dob_tolerance_days,
+                "location_boost": req.location_boost,
+                "min_confidence": req.min_confidence,
+            },
+            dataset_ids=req.dataset_ids if req.dataset_ids else [],
+        )
+    except Exception as exc:
+        logger.warning("Linkage run persistence failed: %s", exc)
+
+    _log_audit(
+        action="entity.link.all",
+        detail=f"linked {len(profiles)} groups"
+        + (f" (run_id={run_id})" if run_id else ""),
+    )
 
     return {
         "total_groups": len(groups),
@@ -4563,6 +4631,7 @@ async def entity_link_all(req: EntityLinkV2Request, db=Depends(get_db)):
         "datasets": list(datasets_map.values()),
         "profiles": profiles,
         "reconciliation": reconciliation,
+        "run_id": run_id,
     }
 
 
@@ -4620,6 +4689,68 @@ async def entity_link_all_worklist(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.get("/entity/link/runs")
+async def list_linkage_runs(db=Depends(get_db)):
+    """P2-4: List all linkage runs."""
+    from backend.db.models import LinkageRun
+
+    runs = db.query(LinkageRun).order_by(LinkageRun.created_at.desc()).limit(50).all()
+    return {
+        "runs": [
+            {
+                "id": r.id,
+                "dataset_ids": r.dataset_ids,
+                "total_groups": r.total_groups,
+                "linked_groups": r.linked_groups,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in runs
+        ]
+    }
+
+
+@app.get("/entity/link/runs/{run_id}")
+async def get_linkage_run(run_id: int, db=Depends(get_db)):
+    """P2-4: Get details of a specific linkage run."""
+    from backend.db.models import LinkageRun, LinkageMember
+
+    run = db.get(LinkageRun, run_id)
+    if not run:
+        raise HTTPException(404, "Linkage run not found")
+
+    members = db.query(LinkageMember).filter(LinkageMember.run_id == run_id).all()
+
+    # Group members by group_index
+    groups: dict[int, list] = {}
+    for m in members:
+        if m.group_index not in groups:
+            groups[m.group_index] = []
+        groups[m.group_index].append(
+            {
+                "ic_norm": m.ic_norm,
+                "source_type": m.source_type,
+                "dataset_id": m.dataset_id,
+                "name": m.name,
+                "dob": m.dob,
+                "confidence": m.confidence,
+                "match_reasons": m.match_reasons,
+            }
+        )
+
+    return {
+        "id": run.id,
+        "params": run.params_json,
+        "dataset_ids": run.dataset_ids,
+        "total_groups": run.total_groups,
+        "linked_groups": run.linked_groups,
+        "created_at": run.created_at.isoformat(),
+        "groups": [
+            {"group_index": gi, "members": members_list}
+            for gi, members_list in sorted(groups.items())
+        ],
+    }
 
 
 @app.post("/entity/link")

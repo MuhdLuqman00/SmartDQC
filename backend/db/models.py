@@ -124,6 +124,48 @@ class ChildRecord(Base):
     )
 
 
+class LinkageRun(Base):
+    __tablename__ = "linkage_run"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    params_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    dataset_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    total_groups: Mapped[int] = mapped_column(Integer, nullable=False)
+    linked_groups: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True
+    )
+
+    members: Mapped[list["LinkageMember"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class LinkageMember(Base):
+    __tablename__ = "linkage_member"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("linkage_run.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    group_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    ic_norm: Mapped[str] = mapped_column(String, nullable=False)
+    source_type: Mapped[str] = mapped_column(String, nullable=False)
+    dataset_id: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    dob: Mapped[str | None] = mapped_column(String, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    match_reasons: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+
+    run: Mapped["LinkageRun"] = relationship(back_populates="members")
+
+
 class User(Base):
     __tablename__ = "users"
 
