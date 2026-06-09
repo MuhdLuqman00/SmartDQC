@@ -28,14 +28,18 @@ const DEFAULT_THRESHOLDS: Thresholds = {
   trajectory_atrisk_tolerance: 0.30,
 };
 
-/* B3: registry-driven cleaning rule — the SAME rule the pipeline runs. */
+/* B3: registry-driven cleaning rule — the SAME rule the pipeline runs.
+   source_types = the schemas that actually apply this rule (for the schema filter). */
 interface Rule {
   code: string;
   en: string; bm: string;
   desc_en: string; desc_bm: string;
   locked: boolean;
   enabled: boolean;
+  source_types: string[];
 }
+
+type RuleSchema = 'myvass' | 'ncdc' | 'kpm' | 'generic';
 
 /* KPI benchmark targets. Both NPAN (national policy) and WHO (clinical
    standard) targets are editable, admin-only. Labels live here; the backend
@@ -72,6 +76,7 @@ export function SettingsPage() {
   const [tab, setTab] = useState<'thresholds' | 'rules' | 'kpi'>('thresholds');
   const [thresholds, setThresholds] = useState<Thresholds>(DEFAULT_THRESHOLDS);
   const [rules, setRules] = useState<Rule[]>([]);
+  const [ruleSchema, setRuleSchema] = useState<RuleSchema>('myvass');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [kpi, setKpi] = useState<KpiTargets | null>(null);
@@ -144,7 +149,9 @@ export function SettingsPage() {
 
   const toggleRule = async (code: string) => {
     const rule = rules.find(r => r.code === code);
-    if (!rule || rule.locked) return;  // locked rules are structural — never toggled
+    // locked rules are structural; a rule not used by the selected schema can't
+    // be toggled from this view (switch schema to manage it).
+    if (!rule || rule.locked || !rule.source_types.includes(ruleSchema)) return;
     const enabled = !rule.enabled;
     setRules(prev => prev.map(r => r.code === code ? { ...r, enabled } : r));
     await api.post('/settings/rules/toggle', { rule: code, enabled }).catch(console.error);
@@ -312,6 +319,31 @@ export function SettingsPage() {
             {t('These rules run during cleaning. Changes are saved and also apply in the upload pipeline. Locked rules are required for valid indicators and always run.',
                'Peraturan ini dijalankan semasa pembersihan. Perubahan disimpan dan turut digunakan dalam saluran muat naik. Peraturan terkunci diperlukan untuk penunjuk sah dan sentiasa dijalankan.')}
           </p>
+          {/* Schema filter — only the rules a schema actually runs are active. */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
+              {t('Show rules for schema', 'Tunjuk peraturan untuk skema')}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {([
+                ['myvass', 'MyVASS'],
+                ['ncdc', 'NCDC'],
+                ['kpm', 'KPM'],
+                ['generic', t('Other', 'Lain-lain')],
+              ] as [RuleSchema, string][]).map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setRuleSchema(key)}
+                  style={{
+                    fontSize: 12, fontWeight: 600, padding: '5px 14px', borderRadius: 'var(--radius-pill)', cursor: 'pointer',
+                    background: ruleSchema === key ? 'var(--kkm-blue)' : 'var(--surface-2)',
+                    color: ruleSchema === key ? '#fff' : 'var(--text-secondary)',
+                    border: `1px solid ${ruleSchema === key ? 'var(--kkm-blue)' : 'var(--border)'}`,
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {rules.length === 0 ? (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: 32, color: 'var(--text-muted)', textAlign: 'center', fontSize: 13 }}>
               {t('No rules found.', 'Tiada peraturan ditemui.')}
@@ -321,30 +353,38 @@ export function SettingsPage() {
               <div style={{ padding: '10px 20px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
                 {t('Cleaning Rules', 'Peraturan Pembersihan')}
               </div>
-              {rules.map((rule, i) => (
-                <div key={rule.code} style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '14px 20px', borderBottom: i < rules.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                  <label style={{ position: 'relative', width: 44, height: 24, flexShrink: 0, marginTop: 2, opacity: rule.locked ? 0.55 : 1 }}>
-                    <input type="checkbox" checked={rule.enabled} disabled={rule.locked} onChange={() => toggleRule(rule.code)} style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
-                    <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: rule.enabled ? 'var(--kkm-blue)' : 'var(--border)', transition: 'background var(--transition)', cursor: rule.locked ? 'not-allowed' : 'pointer' }}>
-                      <div style={{ position: 'absolute', width: 18, height: 18, borderRadius: '50%', background: '#fff', top: 3, left: rule.enabled ? 23 : 3, transition: 'left var(--transition)' }} />
+              {rules.map((rule, i) => {
+                const applicable = rule.source_types.includes(ruleSchema);
+                const disabledToggle = rule.locked || !applicable;
+                return (
+                  <div key={rule.code} style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '14px 20px', borderBottom: i < rules.length - 1 ? '1px solid var(--border)' : 'none', opacity: applicable ? 1 : 0.5 }}>
+                    <label style={{ position: 'relative', width: 44, height: 24, flexShrink: 0, marginTop: 2, opacity: disabledToggle ? 0.55 : 1 }}>
+                      <input type="checkbox" checked={rule.enabled} disabled={disabledToggle} onChange={() => toggleRule(rule.code)} style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
+                      <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: rule.enabled ? 'var(--kkm-blue)' : 'var(--border)', transition: 'background var(--transition)', cursor: disabledToggle ? 'not-allowed' : 'pointer' }}>
+                        <div style={{ position: 'absolute', width: 18, height: 18, borderRadius: '50%', background: '#fff', top: 3, left: rule.enabled ? 23 : 3, transition: 'left var(--transition)' }} />
+                      </div>
+                    </label>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t(rule.en, rule.bm)}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 4 }}>{t(rule.desc_en, rule.desc_bm)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 4 }}>{rule.code}</div>
                     </div>
-                  </label>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t(rule.en, rule.bm)}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 4 }}>{t(rule.desc_en, rule.desc_bm)}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 4 }}>{rule.code}</div>
+                    {!applicable ? (
+                      <span style={{ fontSize: 10, fontWeight: 600, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 8px', color: 'var(--text-muted)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                        {t('Not used', 'Tidak digunakan')}
+                      </span>
+                    ) : rule.locked ? (
+                      <span style={{ fontSize: 10, fontWeight: 600, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 8px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                        {t('Always on', 'Sentiasa aktif')}
+                      </span>
+                    ) : !rule.enabled ? (
+                      <span style={{ fontSize: 10, fontWeight: 600, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 8px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                        {t('Disabled', 'Dilumpuhkan')}
+                      </span>
+                    ) : null}
                   </div>
-                  {rule.locked ? (
-                    <span style={{ fontSize: 10, fontWeight: 600, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 8px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                      {t('Always on', 'Sentiasa aktif')}
-                    </span>
-                  ) : !rule.enabled ? (
-                    <span style={{ fontSize: 10, fontWeight: 600, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 8px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                      {t('Disabled', 'Dilumpuhkan')}
-                    </span>
-                  ) : null}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

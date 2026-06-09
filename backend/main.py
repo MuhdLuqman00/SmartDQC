@@ -4463,9 +4463,18 @@ def _load_rule_state(db) -> dict:
     return state
 
 
+def _rule_source_types(code: str) -> list[str]:
+    """Which source schemas actually run this rule (derived from EVALUATED_RULES),
+    so the Settings tab can grey out rules a given schema never applies."""
+    return [dt for dt, codes in EVALUATED_RULES.items() if code in codes]
+
+
 def _rules_view(db) -> dict:
     state = _load_rule_state(db)
-    return {"rules": [{"code": c, **m, "enabled": state[c]} for c, m in RULE_REGISTRY.items()]}
+    return {"rules": [
+        {"code": c, **m, "enabled": state[c], "source_types": _rule_source_types(c)}
+        for c, m in RULE_REGISTRY.items()
+    ]}
 
 
 @app.get("/settings/rules")
