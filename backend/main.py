@@ -33,7 +33,12 @@ from fastapi.responses import JSONResponse, StreamingResponse, Response
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
-from .config import STANDARD_SCHEMA, auto_suggest_mapping, detect_source_type, normalize_schema_type
+from .config import (
+    STANDARD_SCHEMA,
+    auto_suggest_mapping,
+    detect_source_type,
+    normalize_schema_type,
+)
 from .ai.schema_mapper import ai_suggest_mapping, _needs_ai_assist
 from .eda.runner import run_eda, run_eda_auto, json_safe
 from .eda.kkm_quality_rules import analyze_kkm_quality
@@ -43,7 +48,11 @@ from .export.tableau import (
     to_excel as tbl_excel,
     to_csv as tbl_csv,
 )
-from .export.cleaned import to_excel as cln_excel, to_csv as cln_csv, to_excel_typed as cln_excel_typed
+from .export.cleaned import (
+    to_excel as cln_excel,
+    to_csv as cln_csv,
+    to_excel_typed as cln_excel_typed,
+)
 from .auth import (
     hash_password,
     verify_password,
@@ -79,6 +88,7 @@ async def lifespan(app: FastAPI):
     # (often after the box has sat idle) doesn't pay a cold model-load and 500.
     import asyncio
     from .ai.ollama_client import warmup as _ollama_warmup
+
     asyncio.get_running_loop().run_in_executor(None, _ollama_warmup)
     yield
 
@@ -92,7 +102,11 @@ def _seed_admin():
             db.add(
                 User(
                     username="admin",
-                    password_hash=hash_password(os.environ.get("ADMIN_SEED_PASSWORD", "ADMIN_SEED_PASSWORD_PLACEHOLDER")),
+                    password_hash=hash_password(
+                        os.environ.get(
+                            "ADMIN_SEED_PASSWORD", "ADMIN_SEED_PASSWORD_PLACEHOLDER"
+                        )
+                    ),
                     role="admin",
                 )
             )
@@ -352,19 +366,25 @@ def data_dictionary(fmt: str = Query("json", pattern="^(json|excel|pdf)$")):
     }
     if fmt == "excel":
         from .export.data_dictionary import to_excel as _dd_excel
+
         data = _dd_excel(STANDARD_SCHEMA, derived)
         return StreamingResponse(
             iter([data]),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": 'attachment; filename="SmartDQC_Kamus_Data.xlsx"'},
+            headers={
+                "Content-Disposition": 'attachment; filename="SmartDQC_Kamus_Data.xlsx"'
+            },
         )
     if fmt == "pdf":
         from .export.data_dictionary import to_pdf as _dd_pdf
+
         data = _dd_pdf(STANDARD_SCHEMA, derived)
         return StreamingResponse(
             iter([data]),
             media_type="application/pdf",
-            headers={"Content-Disposition": 'attachment; filename="SmartDQC_Kamus_Data.pdf"'},
+            headers={
+                "Content-Disposition": 'attachment; filename="SmartDQC_Kamus_Data.pdf"'
+            },
         )
     return {"source_fields": STANDARD_SCHEMA, "derived_fields": derived}
 
@@ -500,7 +520,9 @@ def _summarise_cleaning(stats: dict, rows_before: int, rows_after: int) -> dict:
     for key, val in stats.items():
         if isinstance(val, bool) or not isinstance(val, int) or val <= 0:
             continue
-        if key in _NON_ISSUE_STAT_KEYS or key.startswith(("standardized_", "ind_", "gender_")):
+        if key in _NON_ISSUE_STAT_KEYS or key.startswith(
+            ("standardized_", "ind_", "gender_")
+        ):
             continue
         label = key.replace("_", " ").strip().capitalize()
         pct = (val / rows_before * 100) if rows_before else 0
@@ -508,7 +530,9 @@ def _summarise_cleaning(stats: dict, rows_before: int, rows_after: int) -> dict:
         # `code` is the raw stat key (e.g. "dropped_duplicate_ic") so the
         # frontend can localise via a bilingual catalog. `description` stays
         # the English label for back-compat (exports, cached data, fallback).
-        issues.append({"code": key, "description": label, "severity": severity, "count": val})
+        issues.append(
+            {"code": key, "description": label, "severity": severity, "count": val}
+        )
 
     issues.sort(key=lambda i: i["count"], reverse=True)
     return {
@@ -637,7 +661,8 @@ async def run_eda_endpoint(
             "Session persistence failed on /eda/run for cache_id=%s (%s); "
             "results will not be saved to the dashboard until the database "
             "is reachable.",
-            cache_id, persist_error,
+            cache_id,
+            persist_error,
         )
 
     _log_audit(action="eda.run", detail=f"cache_id={cache_id}")
@@ -817,7 +842,9 @@ async def export_aggregated_cached(
         return StreamingResponse(
             iter([data]),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="tableau_{base}.xlsx"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="tableau_{base}.xlsx"'
+            },
         )
     data = tbl_csv(agg_rows)
     return StreamingResponse(
@@ -1123,8 +1150,12 @@ async def download_cleaned_merged(
 import uuid as _uuid
 
 from .eda.cleaning import (
-    clean_data, detect_data_type, EVALUATED_RULES,
-    RULE_REGISTRY, LOCKED_RULES, rules_for_source,
+    clean_data,
+    detect_data_type,
+    EVALUATED_RULES,
+    RULE_REGISTRY,
+    LOCKED_RULES,
+    rules_for_source,
 )
 
 # ── Cleaned-DataFrame cache: in-memory hot tier + durable disk tier ──────────
@@ -1157,9 +1188,7 @@ def _cache_path(key: str) -> "_Path":
 def _prune_disk_cache() -> None:
     """Keep the disk cache bounded by deleting the oldest files."""
     try:
-        files = sorted(
-            _CACHE_DIR.glob("*.pkl"), key=lambda p: p.stat().st_mtime
-        )
+        files = sorted(_CACHE_DIR.glob("*.pkl"), key=lambda p: p.stat().st_mtime)
         for stale in files[:-_DISK_CACHE_MAX] if len(files) > _DISK_CACHE_MAX else []:
             stale.unlink(missing_ok=True)
     except Exception as exc:  # pragma: no cover - best effort
@@ -1213,10 +1242,44 @@ def _cache_get(key: str) -> dict | None:
     return None
 
 
+def _persist_child_records(
+    db, dataset_id: str, source_type: str, recs: list[dict]
+) -> int:
+    """Persist child records to the child_record table. Idempotent replace."""
+    from backend.db.models import ChildRecord
+
+    # Delete existing records for this dataset (idempotent replace)
+    db.query(ChildRecord).filter(ChildRecord.dataset_id == dataset_id).delete()
+    # Bulk insert
+    rows = [
+        ChildRecord(
+            dataset_id=dataset_id,
+            source_type=normalize_schema_type(source_type or "general"),
+            ic_norm=_normalise_ic(r.get("ic", "")),
+            name=r.get("name"),
+            dob=r.get("dob"),
+            gender=r.get("gender"),
+            state=r.get("state"),
+            district=r.get("district"),
+            measure_date=r.get("measure_date"),
+            weight_kg=r.get("weight_kg"),
+            height_cm=r.get("height_cm"),
+            bmi=r.get("bmi"),
+            waz=r.get("waz"),
+            haz=r.get("haz"),
+            baz=r.get("baz"),
+        )
+        for r in recs
+    ]
+    db.add_all(rows)
+    db.commit()
+    return len(rows)
+
+
 # Clinical bounds mirrored from backend/cleaning/kkm.py — keep in sync.
-_FLAG_BERAT_LOW,  _FLAG_BERAT_HIGH  = 12.0,  50.0   # BERAT_MIN / BERAT_MAX
+_FLAG_BERAT_LOW, _FLAG_BERAT_HIGH = 12.0, 50.0  # BERAT_MIN / BERAT_MAX
 _FLAG_TINGGI_LOW, _FLAG_TINGGI_HIGH = 100.0, 160.0  # TINGGI_MIN / TINGGI_MAX
-_FLAG_BMI_LOW,    _FLAG_BMI_HIGH    = 13.5,  18.5   # BMI_UNDERWEIGHT / BMI_OBESE
+_FLAG_BMI_LOW, _FLAG_BMI_HIGH = 13.5, 18.5  # BMI_UNDERWEIGHT / BMI_OBESE
 
 
 def _compute_row_flags(df: "pd.DataFrame") -> "pd.Series":
@@ -1234,10 +1297,14 @@ def _compute_row_flags(df: "pd.DataFrame") -> "pd.Series":
         c = col.lower()
         if "berat" in c and "kg" in c:
             vals = pd.to_numeric(df[col], errors="coerce")
-            flagged |= vals.isna() | (vals < _FLAG_BERAT_LOW) | (vals > _FLAG_BERAT_HIGH)
+            flagged |= (
+                vals.isna() | (vals < _FLAG_BERAT_LOW) | (vals > _FLAG_BERAT_HIGH)
+            )
         elif "tinggi" in c and "cm" in c:
             vals = pd.to_numeric(df[col], errors="coerce")
-            flagged |= vals.isna() | (vals < _FLAG_TINGGI_LOW) | (vals > _FLAG_TINGGI_HIGH)
+            flagged |= (
+                vals.isna() | (vals < _FLAG_TINGGI_LOW) | (vals > _FLAG_TINGGI_HIGH)
+            )
         elif "bmi" in c:
             vals = pd.to_numeric(df[col], errors="coerce")
             flagged |= vals.isna() | (vals < _FLAG_BMI_LOW) | (vals > _FLAG_BMI_HIGH)
@@ -1399,10 +1466,12 @@ def _persist_session(
             id=str(_uuid.uuid4()),
             session_id=sess_id,
             result_type="quality",
-            result_json=json_safe({
-                "quality_score": result.get("quality_score"),
-                "issues": result.get("issues", []),
-            }),
+            result_json=json_safe(
+                {
+                    "quality_score": result.get("quality_score"),
+                    "issues": result.get("issues", []),
+                }
+            ),
             created_at=now,
         )
     )
@@ -1581,7 +1650,12 @@ _BR_FINDING_CODE = {
     "BR-09": "suspicious_dates",
 }
 # KKMQualityChecker severities → frontend severity vocabulary.
-_BR_SEVERITY = {"CRITICAL": "critical", "ERROR": "critical", "WARNING": "warning", "INFO": "info"}
+_BR_SEVERITY = {
+    "CRITICAL": "critical",
+    "ERROR": "critical",
+    "WARNING": "warning",
+    "INFO": "info",
+}
 _BR_SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 
 
@@ -1701,9 +1775,7 @@ async def quality_check_endpoint(
         if nc <= 0:
             continue
         np_pct = c.get("null_percent", 0) or 0
-        severity = (
-            "critical" if np_pct >= 50 else "warning" if np_pct >= 10 else "info"
-        )
+        severity = "critical" if np_pct >= 50 else "warning" if np_pct >= 10 else "info"
         col_issues.append(
             {
                 # `code` + params let the frontend localise; `description`
@@ -1764,13 +1836,17 @@ async def clean_run_endpoint(
     )
 
     # B3: thread the user's rule selection (None ⇒ all rules; locked always run).
-    enabled = set(body.enabled_rules) if (body and body.enabled_rules is not None) else None
+    enabled = (
+        set(body.enabled_rules) if (body and body.enabled_rules is not None) else None
+    )
     try:
         cleaned_df, stats = clean_data(df, effective_type, enabled)
     except Exception as e:
         raise HTTPException(500, f"Cleaning error: {str(e)}")
 
-    summary = _summarise_cleaning(stats, len(df), stats.get("final_count", len(cleaned_df)))
+    summary = _summarise_cleaning(
+        stats, len(df), stats.get("final_count", len(cleaned_df))
+    )
 
     # Authoritative "Data Quality Score" = the 7-dimension rubric (the same
     # one the AI narrative and report use), NOT the row-survival ratio
@@ -1781,15 +1857,16 @@ async def clean_run_endpoint(
     quality_score = summary["quality_score"]
     quality_grade = None
     try:
-        _dq = (run_eda_auto(cleaned_df, effective_type)
-               .get("data_quality_score") or {})
+        _dq = run_eda_auto(cleaned_df, effective_type).get("data_quality_score") or {}
         if _dq.get("score") is not None:
             quality_score = _dq["score"]
             quality_grade = _dq.get("grade")
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning(
             "Quality rubric scoring failed for %s; using survival ratio: %s",
-            filename, exc)
+            filename,
+            exc,
+        )
 
     # Convert cleaned data to records
     cleaned_records = cleaned_df.replace({np.nan: None}).to_dict(orient="records")
@@ -1832,13 +1909,21 @@ async def clean_run_endpoint(
             db=db,
             name=(body.dataset_name if body else None),
         )
+        # P2-2: Auto-persist child records to durable store (best-effort)
+        # Convert cleaned DF to records format for persistence
+        child_recs = _records_from_cached(
+            new_cache_id, dataset_id=new_cache_id, source_type=effective_type
+        )
+        if child_recs:
+            _persist_child_records(db, new_cache_id, effective_type, child_recs)
     except Exception as exc:  # best-effort — never fail the clean run on a DB error
         persisted = False
         persist_error = f"{type(exc).__name__}: {exc}"
         logger.warning(
             "Session persistence failed for cache_id=%s (%s); the dataset will "
             "NOT appear on the dashboard until the database is reachable.",
-            new_cache_id, persist_error,
+            new_cache_id,
+            persist_error,
         )
 
     # Build the full evaluated-rule set for this cleaner type so Quality
@@ -1885,6 +1970,7 @@ async def clean_run_endpoint(
 
 class PreviewImpactBody(BaseModel):
     """B3: proposed mapping + the rule codes the user kept enabled."""
+
     mapping: dict[str, str] = {}
     enabled_rules: Optional[List[str]] = None
 
@@ -1904,6 +1990,7 @@ def clean_rules(data_type: str = Query("myvass")):
     state: dict = {}
     try:
         from .db.init_db import SessionLocal as _SessionLocal
+
         if _SessionLocal is not None:
             _db = _SessionLocal()
             try:
@@ -1912,7 +1999,10 @@ def clean_rules(data_type: str = Query("myvass")):
                 _db.close()
     except Exception:  # pragma: no cover - settings store unavailable
         state = {}
-    rules = [{**r, "enabled": state.get(r["code"], True)} for r in rules_for_source(data_type)]
+    rules = [
+        {**r, "enabled": state.get(r["code"], True)}
+        for r in rules_for_source(data_type)
+    ]
     return JSONResponse(content=json_safe({"data_type": data_type, "rules": rules}))
 
 
@@ -1936,7 +2026,9 @@ async def clean_preview_impact(
         if rename:
             df = df.rename(columns=rename)
     effective_type = _resolve_effective_type(cache_id, data_type)
-    enabled = set(body.enabled_rules) if (body and body.enabled_rules is not None) else None
+    enabled = (
+        set(body.enabled_rules) if (body and body.enabled_rules is not None) else None
+    )
     rows_before = len(df)
     try:
         cleaned_df, stats = clean_data(df, effective_type, enabled)
@@ -2296,11 +2388,11 @@ async def preview_cached_endpoint(
 # ── Stable-key query seam (Phase 5 — edit-under-filter + future scale) ────────
 class QueryCachedRequest(BaseModel):
     cache_id: str
-    search:   str | None = None
+    search: str | None = None
     sort_col: str | None = None
-    sort_dir: str        = "asc"   # "asc" | "desc"
-    offset:   int        = Field(0,     ge=0)
-    limit:    int        = Field(10000, ge=1, le=100000)
+    sort_dir: str = "asc"  # "asc" | "desc"
+    offset: int = Field(0, ge=0)
+    limit: int = Field(10000, ge=1, le=100000)
 
 
 @app.post("/clean/query-cached")
@@ -2320,21 +2412,31 @@ async def query_cached_seam(req: QueryCachedRequest):
 
     # Embed stable ids and per-row flag before any filter/sort
     result = df.copy()
-    result.insert(0, "_row_id",   range(len(result)))
-    result.insert(1, "_flagged",  flags.values.astype(bool))
+    result.insert(0, "_row_id", range(len(result)))
+    result.insert(1, "_flagged", flags.values.astype(bool))
 
     # Apply search across all non-private columns
     if req.search:
         q = req.search.lower()
         data_cols = [c for c in result.columns if not c.startswith("_")]
-        mask = result[data_cols].astype(str).apply(
-            lambda row: any(q in v.lower() for v in row if v.lower() not in ("nan", "none")),
-            axis=1,
+        mask = (
+            result[data_cols]
+            .astype(str)
+            .apply(
+                lambda row: any(
+                    q in v.lower() for v in row if v.lower() not in ("nan", "none")
+                ),
+                axis=1,
+            )
         )
         result = result[mask]
 
     # Apply sort (never sort on _row_id / _flagged themselves)
-    if req.sort_col and req.sort_col in result.columns and not req.sort_col.startswith("_"):
+    if (
+        req.sort_col
+        and req.sort_col in result.columns
+        and not req.sort_col.startswith("_")
+    ):
         result = result.sort_values(
             req.sort_col,
             ascending=(req.sort_dir != "desc"),
@@ -2342,15 +2444,19 @@ async def query_cached_seam(req: QueryCachedRequest):
         )
 
     total = int(len(result))
-    window = result.iloc[req.offset: req.offset + req.limit]
+    window = result.iloc[req.offset : req.offset + req.limit]
     rows = window.replace({np.nan: None}).to_dict(orient="records")
 
-    return JSONResponse(content=json_safe({
-        "rows":     rows,
-        "total":    total,
-        "returned": len(rows),
-        "offset":   req.offset,
-    }))
+    return JSONResponse(
+        content=json_safe(
+            {
+                "rows": rows,
+                "total": total,
+                "returned": len(rows),
+                "offset": req.offset,
+            }
+        )
+    )
 
 
 @app.get("/clean/download-xlsx/{cache_id}")
@@ -2410,7 +2516,9 @@ async def edit_cell(req: CellEditRequest):
     if req.column not in df.columns:
         raise HTTPException(400, f"Column '{req.column}' not in dataset.")
     if req.row_index < 0 or req.row_index >= len(df):
-        raise HTTPException(400, f"row_index {req.row_index} out of range (0..{len(df) - 1}).")
+        raise HTTPException(
+            400, f"row_index {req.row_index} out of range (0..{len(df) - 1})."
+        )
 
     old = df.iloc[req.row_index][req.column]
     # Coerce to the column's dtype where possible; fall back to raw value.
@@ -2431,7 +2539,9 @@ async def edit_cell(req: CellEditRequest):
     updated_row = (
         df.iloc[[req.row_index]].replace({np.nan: None}).to_dict(orient="records")[0]
     )
-    return JSONResponse(content=json_safe({"row_index": req.row_index, "row": updated_row}))
+    return JSONResponse(
+        content=json_safe({"row_index": req.row_index, "row": updated_row})
+    )
 
 
 # ── Dataset Join (horizontal / vertical union) ───────────────────────────────
@@ -2516,16 +2626,28 @@ async def join_run_endpoint(
     result, stats = _perform_join(df_left, df_right, join_type, parsed_keys, dedup)
 
     # Synthesise a human-friendly filename for the joined dataset.
-    left_label = _join_source_label(cache_id_left, file_left.filename if file_left else None)
-    right_label = _join_source_label(cache_id_right, file_right.filename if file_right else None)
+    left_label = _join_source_label(
+        cache_id_left, file_left.filename if file_left else None
+    )
+    right_label = _join_source_label(
+        cache_id_right, file_right.filename if file_right else None
+    )
     join_symbol = "∪" if join_type == "union" else "⨝"
     joined_name = f"{left_label} {join_symbol} {right_label} ({join_type})"
 
     # Inherit source_type from the left side when both sides agree, so the
     # cleaner downstream knows what shape to expect. Otherwise mark as
     # "joined" — the cleaner will fall through to the generic path.
-    left_st = ((_cache_get(cache_id_left) or {}).get("stats") or {}).get("source_type") if cache_id_left else None
-    right_st = ((_cache_get(cache_id_right) or {}).get("stats") or {}).get("source_type") if cache_id_right else None
+    left_st = (
+        ((_cache_get(cache_id_left) or {}).get("stats") or {}).get("source_type")
+        if cache_id_left
+        else None
+    )
+    right_st = (
+        ((_cache_get(cache_id_right) or {}).get("stats") or {}).get("source_type")
+        if cache_id_right
+        else None
+    )
     effective_st = left_st if (left_st and left_st == right_st) else "joined"
 
     cache_id = _cache_cleaned(
@@ -2627,10 +2749,20 @@ async def report_pptx_endpoint(
     eda_result = run_eda_auto(entry["df"], _src)
     _tgt = _load_kpi_targets(db)
     _amber, _ = _rag_tolerances(db)
-    kpi_result = compute_kpi_dashboard(entry["df"], npan=_tgt["npan"], who=_tgt["who"], amber_tolerance=_amber) if include_kpi else None
+    kpi_result = (
+        compute_kpi_dashboard(
+            entry["df"], npan=_tgt["npan"], who=_tgt["who"], amber_tolerance=_amber
+        )
+        if include_kpi
+        else None
+    )
     narrative = _get_or_build_narrative(cache_id, entry)
-    data = build_pptx_bytes(eda_result, narrative, kpi_result=kpi_result, charts=_parse_charts(charts))
-    _log_audit(action="report.pptx", detail=f"cache_id={cache_id} charts={charts or 'default'}")
+    data = build_pptx_bytes(
+        eda_result, narrative, kpi_result=kpi_result, charts=_parse_charts(charts)
+    )
+    _log_audit(
+        action="report.pptx", detail=f"cache_id={cache_id} charts={charts or 'default'}"
+    )
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -2664,10 +2796,20 @@ async def report_pdf_endpoint(
     eda_result = run_eda_auto(entry["df"], _src)
     _tgt = _load_kpi_targets(db)
     _amber, _ = _rag_tolerances(db)
-    kpi_result = compute_kpi_dashboard(entry["df"], npan=_tgt["npan"], who=_tgt["who"], amber_tolerance=_amber) if include_kpi else None
+    kpi_result = (
+        compute_kpi_dashboard(
+            entry["df"], npan=_tgt["npan"], who=_tgt["who"], amber_tolerance=_amber
+        )
+        if include_kpi
+        else None
+    )
     narrative = _get_or_build_narrative(cache_id, entry)
-    data = build_pdf_bytes(eda_result, narrative, kpi_result=kpi_result, charts=_parse_charts(charts))
-    _log_audit(action="report.pdf", detail=f"cache_id={cache_id} charts={charts or 'default'}")
+    data = build_pdf_bytes(
+        eda_result, narrative, kpi_result=kpi_result, charts=_parse_charts(charts)
+    )
+    _log_audit(
+        action="report.pdf", detail=f"cache_id={cache_id} charts={charts or 'default'}"
+    )
     return Response(
         content=data,
         media_type="application/pdf",
@@ -2699,7 +2841,9 @@ async def risk_score_endpoint(
 async def kpi_dashboard_endpoint(
     cache_id: str = Query(..., description="UUID from /clean/run or /join/run"),
     district: str | None = Query(None, description="Filter by district name"),
-    state: str | None = Query(None, description="Filter by state name (full name, case-insensitive)"),
+    state: str | None = Query(
+        None, description="Filter by state name (full name, case-insensitive)"
+    ),
     db=Depends(get_db),
 ):
     """Return RAG traffic-light KPI status benchmarked against Malaysian national targets."""
@@ -2711,7 +2855,11 @@ async def kpi_dashboard_endpoint(
     df = entry["df"]
     if district:
         district_col = next(
-            (c for c in df.columns if any(k in c.lower() for k in ("district", "daerah", "kawasan"))),
+            (
+                c
+                for c in df.columns
+                if any(k in c.lower() for k in ("district", "daerah", "kawasan"))
+            ),
             None,
         )
         if district_col:
@@ -2722,10 +2870,15 @@ async def kpi_dashboard_endpoint(
             None,
         )
         if state_col:
-            df = df[df[state_col].astype(str).str.strip().str.lower() == state.strip().lower()]
+            df = df[
+                df[state_col].astype(str).str.strip().str.lower()
+                == state.strip().lower()
+            ]
     _tgt = _load_kpi_targets(db)
     _amber, _ = _rag_tolerances(db)
-    result = compute_kpi_dashboard(df, npan=_tgt["npan"], who=_tgt["who"], amber_tolerance=_amber)
+    result = compute_kpi_dashboard(
+        df, npan=_tgt["npan"], who=_tgt["who"], amber_tolerance=_amber
+    )
     return JSONResponse(content=json_safe(result))
 
 
@@ -2743,7 +2896,9 @@ async def charts_blocks_endpoint(
     """
     entry = _cache_get(cache_id)
     if entry is None:
-        raise HTTPException(404, "cache_id not found — run /clean/run first or check the UUID")
+        raise HTTPException(
+            404, "cache_id not found — run /clean/run first or check the UUID"
+        )
     try:
         blocks = build_chart_blocks(entry["df"])
     except Exception as exc:  # pragma: no cover — defensive
@@ -2766,7 +2921,9 @@ async def quality_breakdown_endpoint(
     """
     entry = _cache_get(cache_id)
     if entry is None:
-        raise HTTPException(404, "cache_id not found — run /clean/run first or check the UUID")
+        raise HTTPException(
+            404, "cache_id not found — run /clean/run first or check the UUID"
+        )
     source_type = ((entry.get("stats") or {}).get("source_type")) or "myvass"
     try:
         dq = run_eda_auto(entry["df"], source_type).get("data_quality_score") or {}
@@ -2785,7 +2942,8 @@ class TrajectoryRequest(BaseModel):
 async def kpi_trajectory(req: TrajectoryRequest, db=Depends(get_db)):
     """Compute per-district trajectory narratives and 2027 target forecast from indicator snapshots."""
     return compute_trajectory_narratives(
-        req.historical_snapshots, req.current_breakdown,
+        req.historical_snapshots,
+        req.current_breakdown,
         npan=_load_kpi_targets(db)["npan"],
         atrisk_tolerance=_rag_tolerances(db)[1],
         target_year=_load_target_year(db),
@@ -2806,13 +2964,23 @@ async def kpi_trajectory_auto(
             404, "cache_id not found — run /clean/run first or check the UUID"
         )
     snapshots = compute_district_period_snapshots(entry["df"])
-    narratives = compute_trajectory_narratives(snapshots, [], npan=_load_kpi_targets(db)["npan"], atrisk_tolerance=_rag_tolerances(db)[1], target_year=_load_target_year(db))
+    narratives = compute_trajectory_narratives(
+        snapshots,
+        [],
+        npan=_load_kpi_targets(db)["npan"],
+        atrisk_tolerance=_rag_tolerances(db)[1],
+        target_year=_load_target_year(db),
+    )
     periods = sorted({s["period"] for s in snapshots})
-    return JSONResponse(content=json_safe({
-        "narratives":    narratives,
-        "periods":       periods,
-        "has_multiyear": len(periods) >= 2,
-    }))
+    return JSONResponse(
+        content=json_safe(
+            {
+                "narratives": narratives,
+                "periods": periods,
+                "has_multiyear": len(periods) >= 2,
+            }
+        )
+    )
 
 
 # ── Data Quality Report (5-tab Excel) ────────────────────────────────────────
@@ -3425,15 +3593,17 @@ def _build_quality_report(df: pd.DataFrame, stats: dict, data_type: str) -> io.B
         # widths / freeze panes were applied, so sections 2-4 looked unstyled
         # compared to the Executive Summary tab. This pass applies the same
         # visual treatment everywhere, plus the new KKM Navy palette.
-        navy_hex          = "1B2A4A"   # KKM Navy — header fill
-        navy_text_hex     = "0F1B2F"   # KKM Navy Dark — bold title text
-        gold_text_hex     = "C8962E"   # KKM Gold  — section-title accent
+        navy_hex = "1B2A4A"  # KKM Navy — header fill
+        navy_text_hex = "0F1B2F"  # KKM Navy Dark — bold title text
+        gold_text_hex = "C8962E"  # KKM Gold  — section-title accent
         thin = Side(style="thin", color="D8DFEC")
         all_borders = Border(left=thin, right=thin, top=thin, bottom=thin)
-        hdr_font     = Font(bold=True, color="FFFFFF", size=11)
-        hdr_fill     = PatternFill(start_color=navy_hex, end_color=navy_hex, fill_type="solid")
+        hdr_font = Font(bold=True, color="FFFFFF", size=11)
+        hdr_fill = PatternFill(
+            start_color=navy_hex, end_color=navy_hex, fill_type="solid"
+        )
         section_font = Font(bold=True, size=12, color=gold_text_hex)
-        title_font   = Font(bold=True, size=14, color=navy_text_hex)
+        title_font = Font(bold=True, size=14, color=navy_text_hex)
 
         def _style_header_row(row):
             for cell in row:
@@ -3452,7 +3622,9 @@ def _build_quality_report(df: pd.DataFrame, stats: dict, data_type: str) -> io.B
             # three-row header consistently (section title + sub-header +
             # Row Labels row).
             header_rows: set[int] = set()
-            for i, row in enumerate(ws.iter_rows(min_row=1, max_row=ws.max_row), start=1):
+            for i, row in enumerate(
+                ws.iter_rows(min_row=1, max_row=ws.max_row), start=1
+            ):
                 val = str(row[0].value or "")
                 if val.startswith("Count of"):
                     # mark the next two rows as part of this block's header
@@ -3461,7 +3633,9 @@ def _build_quality_report(df: pd.DataFrame, stats: dict, data_type: str) -> io.B
                     header_rows.add(i)
 
             # Pass 2: apply styles
-            for i, row in enumerate(ws.iter_rows(min_row=1, max_row=ws.max_row), start=1):
+            for i, row in enumerate(
+                ws.iter_rows(min_row=1, max_row=ws.max_row), start=1
+            ):
                 val = str(row[0].value or "")
                 if val.startswith("Count of"):
                     # Section title row — gold-accented bold, no fill so it
@@ -3567,8 +3741,12 @@ def _format_narrative(n: dict) -> str:
     insights = n.get("insights_5w1h") or {}
     if isinstance(insights, dict):
         labels = {
-            "who": "Who", "what": "What", "when": "When",
-            "where": "Where", "why": "Why", "how": "How",
+            "who": "Who",
+            "what": "What",
+            "when": "When",
+            "where": "Where",
+            "why": "Why",
+            "how": "How",
         }
         lines = [
             f"• {labels.get(k, k.title())}: {_localize(v)}"
@@ -3596,7 +3774,9 @@ def _format_narrative(n: dict) -> str:
 @app.post("/ai/narrative")
 async def ai_narrative(
     cache_id: str = Query(...),
-    chat_id: str | None = Query(None, description="Optional chat session to persist this exchange into."),
+    chat_id: str | None = Query(
+        None, description="Optional chat session to persist this exchange into."
+    ),
 ):
     """Generate an AI narrative for the cleaned dataset referenced by cache_id.
 
@@ -3630,7 +3810,9 @@ async def ai_narrative(
     formatted = _format_narrative(narrative)
 
     if chat_id:
-        _chat_append_message(chat_id, role="narrative", content=formatted, data_json=narrative)
+        _chat_append_message(
+            chat_id, role="narrative", content=formatted, data_json=narrative
+        )
 
     return {"narrative": formatted, "raw": narrative}
 
@@ -3638,7 +3820,9 @@ async def ai_narrative(
 @app.post("/ai/nlq")
 async def ai_nlq(
     cache_id: str = Query(...),
-    chat_id: str | None = Query(None, description="Optional chat session to persist this exchange into."),
+    chat_id: str | None = Query(
+        None, description="Optional chat session to persist this exchange into."
+    ),
     body: _AIBody | None = None,
 ):
     """Answer a natural-language question against the cleaned dataset.
@@ -3660,9 +3844,11 @@ async def ai_nlq(
     if chat_id and question:
         _chat_append_message(chat_id, role="user", content=question)
         _chat_append_message(
-            chat_id, role="ai", content=answer or "",
+            chat_id,
+            role="ai",
+            content=answer or "",
             data_json={
-                "data":      result.get("result"),
+                "data": result.get("result"),
                 "chart_b64": result.get("chart_b64"),
             },
         )
@@ -3678,6 +3864,7 @@ async def ai_nlq(
 # Anchored to a dataset (cache_id == Dataset.id). The /ai/nlq and
 # /ai/narrative hooks above call _chat_append_message() when a chat_id is
 # supplied so the user's transcript survives reloads.
+
 
 class _ChatTitleBody(BaseModel):
     title: str
@@ -3708,12 +3895,19 @@ def _chat_append_message(
         try:
             cs = db.get(_ChatSession, chat_session_id)
             if cs is None:
-                logger.warning("chat append: session %s not found; dropping message", chat_session_id)
+                logger.warning(
+                    "chat append: session %s not found; dropping message",
+                    chat_session_id,
+                )
                 return
-            db.add(_ChatMessage(
-                chat_session_id=chat_session_id,
-                role=role, content=content, data_json=data_json,
-            ))
+            db.add(
+                _ChatMessage(
+                    chat_session_id=chat_session_id,
+                    role=role,
+                    content=content,
+                    data_json=data_json,
+                )
+            )
             cs.updated_at = datetime.utcnow()
             # Auto-title from the first user question, OR from the first AI
             # insight when the chat is narrative-only (so it stops reading as a
@@ -3726,7 +3920,11 @@ def _chat_append_message(
                 trimmed = first.strip().lstrip("#*->•").strip()
                 if role == "narrative":
                     trimmed = f"AI Insight — {trimmed}" if trimmed else "AI Insight"
-                cs.title = (trimmed[:60] + "…") if len(trimmed) > 60 else (trimmed or "New chat")
+                cs.title = (
+                    (trimmed[:60] + "…")
+                    if len(trimmed) > 60
+                    else (trimmed or "New chat")
+                )
             db.commit()
         finally:
             db.close()
@@ -3753,11 +3951,11 @@ def list_chats(dataset_id: str = Query(...), db=Depends(get_db)):
     )
     return [
         {
-            "id":            cs.id,
-            "title":         cs.title,
+            "id": cs.id,
+            "title": cs.title,
             "message_count": int(msg_count or 0),
-            "created_at":    cs.created_at.isoformat(),
-            "updated_at":    cs.updated_at.isoformat(),
+            "created_at": cs.created_at.isoformat(),
+            "updated_at": cs.updated_at.isoformat(),
         }
         for cs, msg_count in rows
     ]
@@ -3775,8 +3973,8 @@ def create_chat(dataset_id: str = Query(...), db=Depends(get_db)):
     db.commit()
     _log_audit(action="chat.create", dataset_id=dataset_id, detail=f"chat_id={cs.id}")
     return {
-        "id":         cs.id,
-        "title":      cs.title,
+        "id": cs.id,
+        "title": cs.title,
         "created_at": cs.created_at.isoformat(),
         "updated_at": cs.updated_at.isoformat(),
     }
@@ -3791,17 +3989,17 @@ def get_chat(chat_id: str, db=Depends(get_db)):
     if cs is None:
         raise HTTPException(404, f"chat_id {chat_id} not found")
     return {
-        "id":         cs.id,
+        "id": cs.id,
         "dataset_id": cs.dataset_id,
-        "title":      cs.title,
+        "title": cs.title,
         "created_at": cs.created_at.isoformat(),
         "updated_at": cs.updated_at.isoformat(),
         "messages": [
             {
-                "id":         m.id,
-                "role":       m.role,
-                "content":    m.content,
-                "data_json":  m.data_json,
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "data_json": m.data_json,
                 "created_at": m.created_at.isoformat(),
             }
             for m in cs.messages
@@ -3851,13 +4049,19 @@ def post_chat_message(chat_id: str, body: _ChatMessageBody, db=Depends(get_db)):
         raise HTTPException(400, "role must be one of: user, ai, narrative")
     m = _ChatMessage(
         chat_session_id=chat_id,
-        role=body.role, content=body.content, data_json=body.data_json,
+        role=body.role,
+        content=body.content,
+        data_json=body.data_json,
     )
     db.add(m)
     cs.updated_at = datetime.utcnow()
     if body.role == "user" and cs.title == "New chat":
-        trimmed = (body.content or "").strip().splitlines()[0] if body.content.strip() else ""
-        cs.title = (trimmed[:60] + "…") if len(trimmed) > 60 else (trimmed or "New chat")
+        trimmed = (
+            (body.content or "").strip().splitlines()[0] if body.content.strip() else ""
+        )
+        cs.title = (
+            (trimmed[:60] + "…") if len(trimmed) > 60 else (trimmed or "New chat")
+        )
     db.commit()
     return {"id": m.id, "created_at": m.created_at.isoformat()}
 
@@ -3902,7 +4106,12 @@ def _delete_datasets(db, dataset_ids: list[str]) -> dict:
     Order: AnalysisResult -> Session -> Dataset, then evict the disk/memory
     cache. Commits internally before evicting cache; the caller is responsible
     for rolling back on exception."""
-    from backend.db.models import Dataset, Session as _Session, AnalysisResult, EntityLinkage
+    from backend.db.models import (
+        Dataset,
+        Session as _Session,
+        AnalysisResult,
+        EntityLinkage,
+    )
 
     deleted: list[str] = []
     not_found: list[str] = []
@@ -3918,12 +4127,12 @@ def _delete_datasets(db, dataset_ids: list[str]) -> dict:
             db.query(AnalysisResult).filter(
                 AnalysisResult.session_id.in_(session_ids)
             ).delete(synchronize_session=False)
-            db.query(_Session).filter(
-                _Session.dataset_id == ds_id
-            ).delete(synchronize_session=False)
-        db.query(EntityLinkage).filter(
-            EntityLinkage.dataset_id == ds_id
-        ).update({"dataset_id": None}, synchronize_session=False)
+            db.query(_Session).filter(_Session.dataset_id == ds_id).delete(
+                synchronize_session=False
+            )
+        db.query(EntityLinkage).filter(EntityLinkage.dataset_id == ds_id).update(
+            {"dataset_id": None}, synchronize_session=False
+        )
         db.delete(ds)
         deleted.append(ds_id)
 
@@ -3975,15 +4184,17 @@ async def datasets_compare(req: DatasetCompareRequest, db=Depends(get_db)):
                     if key and actual is not None:
                         indicators[f"{key}_rate"] = float(actual) / 100.0
             except Exception as exc:  # pragma: no cover — defensive
-                logger.warning("compare: indicator compute failed for %s: %s", ds_id, exc)
+                logger.warning(
+                    "compare: indicator compute failed for %s: %s", ds_id, exc
+                )
         summaries.append(
             {
-                "dataset_id":    ds_id,
-                "name":          ds.name,
-                "source_type":   normalize_schema_type(ds.source_type or "general"),
+                "dataset_id": ds_id,
+                "name": ds.name,
+                "source_type": normalize_schema_type(ds.source_type or "general"),
                 "quality_score": _coerce_float(ds.quality_score),
-                "indicators":    indicators,
-                "created_at":    ds.created_at.isoformat() if ds.created_at else None,
+                "indicators": indicators,
+                "created_at": ds.created_at.isoformat() if ds.created_at else None,
             }
         )
 
@@ -4014,7 +4225,12 @@ async def datasets_delete(req: DatasetDeleteRequest):
 
 # ── Entity Resolution ────────────────────────────────────────────────────────
 
-from backend.ml.entity import link_records, link_records_v2, persist_linkage
+from backend.ml.entity import (
+    link_records,
+    link_records_v2,
+    persist_linkage,
+    _normalise_ic,
+)
 
 
 class EntityLinkRequest(BaseModel):
@@ -4033,18 +4249,35 @@ class EntityLinkV2Request(BaseModel):
     name_fuzzy_threshold: float = 0.85
     dob_tolerance_days: int = 1
     location_boost: bool = True
-    min_confidence: float = 0.0       # 0.0 = include unmatched singles
-    max_groups: int = 500             # cap response size — UI paginates
+    min_confidence: float = 0.0  # 0.0 = include unmatched singles
+    max_groups: int = 500  # cap response size — UI paginates
 
 
-_IC_COL_CANDIDATES       = ("IC_NO_PASSPORT", "IC", "NRIC", "MyKID", "ic_no", "no_kp", "no_ic")
-_NAME_COL_CANDIDATES     = ("NAMA", "name", "NAMA_PESERTA", "FULL_NAME", "nama_kanak_kanak")
-_DOB_COL_CANDIDATES      = ("Tarikh_Lahir", "DOB", "TARIKH_LAHIR", "dob", "date_of_birth")
-_GENDER_COL_CANDIDATES   = ("jantina", "JANTINA", "gender", "GENDER", "sex")
-_STATE_COL_CANDIDATES    = ("negeri", "NEGERI", "state", "STATE")
+class EntityRecordsSyncRequest(BaseModel):
+    dataset_ids: list[str]
+
+
+_IC_COL_CANDIDATES = (
+    "IC_NO_PASSPORT",
+    "IC",
+    "NRIC",
+    "MyKID",
+    "ic_no",
+    "no_kp",
+    "no_ic",
+)
+_NAME_COL_CANDIDATES = ("NAMA", "name", "NAMA_PESERTA", "FULL_NAME", "nama_kanak_kanak")
+_DOB_COL_CANDIDATES = ("Tarikh_Lahir", "DOB", "TARIKH_LAHIR", "dob", "date_of_birth")
+_GENDER_COL_CANDIDATES = ("jantina", "JANTINA", "gender", "GENDER", "sex")
+_STATE_COL_CANDIDATES = ("negeri", "NEGERI", "state", "STATE")
 _DISTRICT_COL_CANDIDATES = ("daerah", "DAERAH", "district", "DISTRICT", "kawasan")
-_MEASURE_DATE_CANDIDATES = ("Tarikh_Pengukuran", "TARIKH_PENGUKURAN",
-                            "tarikh_ukur_dt", "tarikh_ukur", "measure_date")
+_MEASURE_DATE_CANDIDATES = (
+    "Tarikh_Pengukuran",
+    "TARIKH_PENGUKURAN",
+    "tarikh_ukur_dt",
+    "tarikh_ukur",
+    "measure_date",
+)
 # Anthropometrics + z-scores — coerced via pd.to_numeric for the timeline.
 _NUMERIC_TIMELINE_COLS = ("berat_kg", "tinggi_cm", "bmi", "waz", "haz", "baz")
 
@@ -4077,15 +4310,15 @@ def _records_from_cached(
     if df is None or df.empty:
         return []
     cols = list(df.columns)
-    ic_c       = _pick_col(cols, _IC_COL_CANDIDATES)
-    name_c     = _pick_col(cols, _NAME_COL_CANDIDATES)
-    dob_c      = _pick_col(cols, _DOB_COL_CANDIDATES)
-    gender_c   = _pick_col(cols, _GENDER_COL_CANDIDATES)
-    state_c    = _pick_col(cols, _STATE_COL_CANDIDATES)
+    ic_c = _pick_col(cols, _IC_COL_CANDIDATES)
+    name_c = _pick_col(cols, _NAME_COL_CANDIDATES)
+    dob_c = _pick_col(cols, _DOB_COL_CANDIDATES)
+    gender_c = _pick_col(cols, _GENDER_COL_CANDIDATES)
+    state_c = _pick_col(cols, _STATE_COL_CANDIDATES)
     district_c = _pick_col(cols, _DISTRICT_COL_CANDIDATES)
-    measure_c  = _pick_col(cols, _MEASURE_DATE_CANDIDATES)
-    has_year   = "tahun_ukur" in cols
-    has_month  = "bulan_ukur" in cols
+    measure_c = _pick_col(cols, _MEASURE_DATE_CANDIDATES)
+    has_year = "tahun_ukur" in cols
+    has_month = "bulan_ukur" in cols
     if ic_c is None:
         return []
 
@@ -4120,14 +4353,14 @@ def _records_from_cached(
     n = len(df)
     for i in range(n):
         rec: dict = {
-            "ic":           _str_or_none(df.iloc[i][ic_c]) or "",
-            "source_type":  normalize_schema_type(source_type or "general"),
-            "dataset_id":   dataset_id,
-            "name":         _str_or_none(df.iloc[i][name_c])     if name_c     else None,
-            "dob":          _str_or_none(df.iloc[i][dob_c])      if dob_c      else None,
-            "gender":       _str_or_none(df.iloc[i][gender_c])   if gender_c   else None,
-            "state":        _str_or_none(df.iloc[i][state_c])    if state_c    else None,
-            "district":     _str_or_none(df.iloc[i][district_c]) if district_c else None,
+            "ic": _str_or_none(df.iloc[i][ic_c]) or "",
+            "source_type": normalize_schema_type(source_type or "general"),
+            "dataset_id": dataset_id,
+            "name": _str_or_none(df.iloc[i][name_c]) if name_c else None,
+            "dob": _str_or_none(df.iloc[i][dob_c]) if dob_c else None,
+            "gender": _str_or_none(df.iloc[i][gender_c]) if gender_c else None,
+            "state": _str_or_none(df.iloc[i][state_c]) if state_c else None,
+            "district": _str_or_none(df.iloc[i][district_c]) if district_c else None,
             "measure_date": _measure_date_for(i),
         }
         # Numerics — coerce per-cell so NaN becomes None rather than 'nan'.
@@ -4152,6 +4385,31 @@ def _records_from_cached(
         if dataset_created_at is not None:
             r["_dataset_created_at"] = dataset_created_at
     return out
+
+
+@app.post("/entity/records/sync")
+async def entity_records_sync(req: EntityRecordsSyncRequest, db=Depends(get_db)):
+    """P2-2: Backfill child_record table from currently cached datasets."""
+    from backend.db.models import Dataset
+
+    result = {}
+    for ds_id in req.dataset_ids:
+        entry = _cache_get(ds_id)
+        if entry is None:
+            result[ds_id] = 0
+            continue
+        try:
+            recs = _records_from_cached(
+                ds_id, ds_id, entry["stats"].get("source_type", "general")
+            )
+            count = _persist_child_records(
+                db, ds_id, entry["stats"].get("source_type", "general"), recs
+            )
+            result[ds_id] = count
+        except Exception as exc:
+            logger.warning("Sync failed for dataset %s: %s", ds_id, exc)
+            result[ds_id] = 0
+    return {"persisted_counts": result}
 
 
 @app.post("/entity/link")
@@ -4225,25 +4483,32 @@ def _run_v2_linkage(req: EntityLinkV2Request) -> dict:
             if ds is None:
                 continue
             recs = _records_from_cached(
-                ds_id, ds_id, normalize_schema_type(ds.source_type or "general"),
+                ds_id,
+                ds_id,
+                normalize_schema_type(ds.source_type or "general"),
                 dataset_created_at=ds.created_at,
             )
             if ds.created_at is not None:
                 dataset_created_at_by_id[ds_id] = ds.created_at
-            dataset_meta.append({
-                "dataset_id":  ds_id,
-                "filename":    ds.filename,
-                "source_type": ds.source_type,
-                "records":     len(recs),
-                # ISO string so the UI can render "latest from X" labels.
-                "created_at":  ds.created_at.isoformat() if ds.created_at else None,
-            })
+            dataset_meta.append(
+                {
+                    "dataset_id": ds_id,
+                    "filename": ds.filename,
+                    "source_type": ds.source_type,
+                    "records": len(recs),
+                    # ISO string so the UI can render "latest from X" labels.
+                    "created_at": ds.created_at.isoformat() if ds.created_at else None,
+                }
+            )
             all_records.extend(recs)
 
     if not all_records:
         return {
-            "total_groups": 0, "linked_groups": 0, "unlinked": 0,
-            "datasets": dataset_meta, "profiles": [],
+            "total_groups": 0,
+            "linked_groups": 0,
+            "unlinked": 0,
+            "datasets": dataset_meta,
+            "profiles": [],
             "warning": "No matchable rows found in the cached datasets — re-run cleaning if the datasets were uploaded a long time ago and may have been evicted from the cache.",
         }
 
@@ -4263,13 +4528,13 @@ def _run_v2_linkage(req: EntityLinkV2Request) -> dict:
     # Sort: linked-by-confidence-desc first, unlinked at the bottom.
     groups.sort(key=lambda g: (-len(g["sources"]), -g["confidence"]))
 
-    linked  = sum(1 for g in groups if len(g["sources"]) > 1)
+    linked = sum(1 for g in groups if len(g["sources"]) > 1)
     return {
-        "total_groups":  len(groups),
+        "total_groups": len(groups),
         "linked_groups": linked,
-        "unlinked":      len(groups) - linked,
-        "datasets":      dataset_meta,
-        "profiles":      groups[: req.max_groups],
+        "unlinked": len(groups) - linked,
+        "datasets": dataset_meta,
+        "profiles": groups[: req.max_groups],
     }
 
 
@@ -4304,13 +4569,27 @@ async def entity_link_v2_export(req: EntityLinkV2Request):
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow([
-        "group_ic", "canonical_name", "canonical_dob", "canonical_gender",
-        "canonical_state", "canonical_district",
-        "confidence", "match_reasons", "conflict_fields",
-        "source_type", "dataset_id", "source_name", "source_dob", "source_ic",
-        "source_gender", "source_state", "source_district",
-    ])
+    w.writerow(
+        [
+            "group_ic",
+            "canonical_name",
+            "canonical_dob",
+            "canonical_gender",
+            "canonical_state",
+            "canonical_district",
+            "confidence",
+            "match_reasons",
+            "conflict_fields",
+            "source_type",
+            "dataset_id",
+            "source_name",
+            "source_dob",
+            "source_ic",
+            "source_gender",
+            "source_state",
+            "source_district",
+        ]
+    )
     for g in result["profiles"]:
         reasons = ";".join(g.get("match_reasons", []))
         canonical = (g.get("profile") or {}).get("canonical") or {}
@@ -4318,25 +4597,27 @@ async def entity_link_v2_export(req: EntityLinkV2Request):
             f"{c['field']}({c['severity']})" for c in g.get("conflicts", [])
         )
         for src in g["sources"]:
-            w.writerow([
-                g.get("ic", ""),
-                canonical.get("name") or "",
-                canonical.get("dob") or "",
-                canonical.get("gender") or "",
-                canonical.get("state") or "",
-                canonical.get("district") or "",
-                f"{g.get('confidence', 0.0):.2f}",
-                reasons,
-                conflict_fields,
-                src.get("source_type", ""),
-                src.get("dataset_id", ""),
-                src.get("name", ""),
-                src.get("dob", ""),
-                src.get("ic", ""),
-                src.get("gender", "") or "",
-                src.get("state", "") or "",
-                src.get("district", "") or "",
-            ])
+            w.writerow(
+                [
+                    g.get("ic", ""),
+                    canonical.get("name") or "",
+                    canonical.get("dob") or "",
+                    canonical.get("gender") or "",
+                    canonical.get("state") or "",
+                    canonical.get("district") or "",
+                    f"{g.get('confidence', 0.0):.2f}",
+                    reasons,
+                    conflict_fields,
+                    src.get("source_type", ""),
+                    src.get("dataset_id", ""),
+                    src.get("name", ""),
+                    src.get("dob", ""),
+                    src.get("ic", ""),
+                    src.get("gender", "") or "",
+                    src.get("state", "") or "",
+                    src.get("district", "") or "",
+                ]
+            )
 
     _log_audit(
         action="entity.link.v2.export",
@@ -4358,9 +4639,7 @@ def dashboard_summary(db=Depends(get_db)):
     # nil-UUID id and would otherwise surface as latest_session, causing the
     # frontend to request /kpi/dashboard?cache_id=0000... → 404.
     PLACEHOLDER_DATASET_ID = "00000000-0000-0000-0000-000000000000"
-    datasets = [
-        d for d in db.query(Dataset).all() if d.id != PLACEHOLDER_DATASET_ID
-    ]
+    datasets = [d for d in db.query(Dataset).all() if d.id != PLACEHOLDER_DATASET_ID]
     if not datasets:
         return {
             "total_children": 0,
@@ -4485,7 +4764,7 @@ def _load_kpi_targets(db) -> dict:
     stored = _get_setting("kpi.targets", {}, db)
     return {
         "npan": {**defaults["npan"], **(stored.get("npan") or {})},
-        "who":  {**defaults["who"],  **(stored.get("who")  or {})},
+        "who": {**defaults["who"], **(stored.get("who") or {})},
     }
 
 
@@ -4494,8 +4773,15 @@ def _rag_tolerances(db) -> tuple[float, float]:
     to the historical defaults when an older threshold.all has no such keys."""
     thr = _get_setting("threshold.all", _DEFAULT_THRESHOLDS, db)
     return (
-        float(thr.get("rag_amber_tolerance", _DEFAULT_THRESHOLDS["rag_amber_tolerance"])),
-        float(thr.get("trajectory_atrisk_tolerance", _DEFAULT_THRESHOLDS["trajectory_atrisk_tolerance"])),
+        float(
+            thr.get("rag_amber_tolerance", _DEFAULT_THRESHOLDS["rag_amber_tolerance"])
+        ),
+        float(
+            thr.get(
+                "trajectory_atrisk_tolerance",
+                _DEFAULT_THRESHOLDS["trajectory_atrisk_tolerance"],
+            )
+        ),
     )
 
 
@@ -4520,7 +4806,10 @@ def post_thresholds(updates: dict, db=Depends(get_db)):
     current = _get_setting("threshold.all", _DEFAULT_THRESHOLDS, db)
     current.update(updates)
     _set_setting("threshold.all", current, db)
-    _log_audit(action="settings.thresholds", detail=",".join(f"{k}={v}" for k, v in updates.items()))
+    _log_audit(
+        action="settings.thresholds",
+        detail=",".join(f"{k}={v}" for k, v in updates.items()),
+    )
     return current
 
 
@@ -4546,10 +4835,12 @@ def _rule_source_types(code: str) -> list[str]:
 
 def _rules_view(db) -> dict:
     state = _load_rule_state(db)
-    return {"rules": [
-        {"code": c, **m, "enabled": state[c], "source_types": _rule_source_types(c)}
-        for c, m in RULE_REGISTRY.items()
-    ]}
+    return {
+        "rules": [
+            {"code": c, **m, "enabled": state[c], "source_types": _rule_source_types(c)}
+            for c, m in RULE_REGISTRY.items()
+        ]
+    }
 
 
 @app.get("/settings/rules")
@@ -4566,11 +4857,15 @@ def toggle_rule(body: dict, db=Depends(get_db)):
     if rule not in RULE_REGISTRY:
         raise HTTPException(status_code=404, detail=f"Rule '{rule}' not found")
     if rule in LOCKED_RULES:
-        raise HTTPException(status_code=400, detail=f"Rule '{rule}' is locked and always runs")
+        raise HTTPException(
+            status_code=400, detail=f"Rule '{rule}' is locked and always runs"
+        )
     stored = _get_setting("cleaning.enabled_rules", {}, db) or {}
     stored[rule] = enabled
     _set_setting("cleaning.enabled_rules", stored, db)
-    _log_audit(action="settings.rule_toggle", detail=f"{rule}={'on' if enabled else 'off'}")
+    _log_audit(
+        action="settings.rule_toggle", detail=f"{rule}={'on' if enabled else 'off'}"
+    )
     return _rules_view(db)
 
 
@@ -4592,12 +4887,14 @@ def _kpi_targets_view(db) -> dict:
     defaults = official_targets()
     current = _load_kpi_targets(db)
     return {
-        "current":  current,
+        "current": current,
         "defaults": defaults,
         "target_year": _load_target_year(db),
         "source": {
-            "npan": "custom" if current["npan"] != defaults["npan"] else "npan_2021_2025",
-            "who":  "custom" if current["who"]  != defaults["who"]  else "who_2025",
+            "npan": "custom"
+            if current["npan"] != defaults["npan"]
+            else "npan_2021_2025",
+            "who": "custom" if current["who"] != defaults["who"] else "who_2025",
         },
     }
 
@@ -4623,13 +4920,19 @@ def post_kpi_targets(body: dict, user=Depends(require_admin), db=Depends(get_db)
             raise HTTPException(status_code=422, detail=f"'{grp}' must be an object")
         for k, v in incoming.items():
             if k not in defaults[grp]:
-                raise HTTPException(status_code=422, detail=f"Unknown KPI key '{k}' in {grp}")
+                raise HTTPException(
+                    status_code=422, detail=f"Unknown KPI key '{k}' in {grp}"
+                )
             try:
                 fv = float(v)
             except (TypeError, ValueError):
-                raise HTTPException(status_code=422, detail=f"{grp}.{k} must be numeric")
+                raise HTTPException(
+                    status_code=422, detail=f"{grp}.{k} must be numeric"
+                )
             if not (0.0 <= fv <= 100.0):
-                raise HTTPException(status_code=422, detail=f"{grp}.{k} must be between 0 and 100")
+                raise HTTPException(
+                    status_code=422, detail=f"{grp}.{k} must be between 0 and 100"
+                )
             out[grp][k] = fv
     # Optional forecast target year (separate key; null/empty clears → auto).
     if "target_year" in body:
@@ -4640,9 +4943,13 @@ def post_kpi_targets(body: dict, user=Depends(require_admin), db=Depends(get_db)
             try:
                 ty_int = int(ty)
             except (TypeError, ValueError):
-                raise HTTPException(status_code=422, detail="target_year must be an integer year")
+                raise HTTPException(
+                    status_code=422, detail="target_year must be an integer year"
+                )
             if not (2020 <= ty_int <= 2100):
-                raise HTTPException(status_code=422, detail="target_year must be between 2020 and 2100")
+                raise HTTPException(
+                    status_code=422, detail="target_year must be between 2020 and 2100"
+                )
             _set_setting("kpi.target_year", ty_int, db)
     _set_setting("kpi.targets", out, db)
     _log_audit(
