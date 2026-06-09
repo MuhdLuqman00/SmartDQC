@@ -1325,6 +1325,43 @@ def _records_from_store(
     }
 
 
+def _reconciliation_summary(groups: list[dict]) -> dict:
+    """P2-5: Compute reconciliation summary from linkage groups."""
+    total_records = sum(len(g["sources"]) for g in groups)
+    unique_children = len(groups)
+    duplicate_records = total_records - unique_children
+    duplication_rate = duplicate_records / total_records if total_records > 0 else 0.0
+
+    multi_source_children = sum(
+        1 for g in groups if len({s["source_type"] for s in g["sources"]}) >= 2
+    )
+
+    # Source overlap: group counts by sorted tuple of source types
+    source_overlap: dict[str, int] = {}
+    for g in groups:
+        sources = tuple(sorted({s["source_type"] for s in g["sources"]}))
+        key = "+".join(sources)
+        source_overlap[key] = source_overlap.get(key, 0) + 1
+
+    # Conflicts by severity
+    conflicts_by_severity = {"hard": 0, "soft": 0, "strong": 0}
+    for g in groups:
+        severities = {c["severity"] for c in g.get("conflicts", [])}
+        for sev in severities:
+            if sev in conflicts_by_severity:
+                conflicts_by_severity[sev] += 1
+
+    return {
+        "total_records": total_records,
+        "unique_children": unique_children,
+        "duplicate_records": duplicate_records,
+        "duplication_rate": round(duplication_rate, 4),
+        "multi_source_children": multi_source_children,
+        "source_overlap": source_overlap,
+        "conflicts_by_severity": conflicts_by_severity,
+    }
+
+
 # Clinical bounds mirrored from backend/cleaning/kkm.py — keep in sync.
 _FLAG_BERAT_LOW, _FLAG_BERAT_HIGH = 12.0, 50.0  # BERAT_MIN / BERAT_MAX
 _FLAG_TINGGI_LOW, _FLAG_TINGGI_HIGH = 100.0, 160.0  # TINGGI_MIN / TINGGI_MAX
@@ -4514,6 +4551,9 @@ async def entity_link_all(req: EntityLinkV2Request, db=Depends(get_db)):
 
     profiles = groups[: req.max_groups] if req.max_groups else groups
 
+    # P2-5: Add reconciliation summary
+    reconciliation = _reconciliation_summary(groups)
+
     _log_audit(action="entity.link.all", detail=f"linked {len(profiles)} groups")
 
     return {
@@ -4522,7 +4562,64 @@ async def entity_link_all(req: EntityLinkV2Request, db=Depends(get_db)):
         "unlinked": sum(1 for g in groups if len(g["sources"]) == 1),
         "datasets": list(datasets_map.values()),
         "profiles": profiles,
+        "reconciliation": reconciliation,
     }
+
+
+@app.get("/entity/link/all/worklist")
+async def entity_link_all_worklist(
+    worklist_type: str = Query("conflicts", description="conflicts|duplicates"),
+    db=Depends(get_db),
+):
+    """P2-5: Export worklist CSV for conflicts or duplicates."""
+    from backend.db.init_db import SessionLocal
+
+    # Re-run linkage to get groups (in production, would cache or use persisted runs)
+    with SessionLocal() as db_session:
+        records, _ = _records_from_store(db_session, None)
+
+    if not records:
+        return Response(content="", media_type="text/csv")
+
+    groups = link_records_v2(records, min_confidence=0.0)
+
+    buffer = io.StringIO()
+    buffer.write(
+        "group_index,ic,name,dob,source_type,dataset_id,confidence,field,severity,values\n"
+    )
+
+    if worklist_type == "conflicts":
+        for gi, g in enumerate(groups):
+            if not g.get("conflicts"):
+                continue
+            for conflict in g["conflicts"]:
+                values_str = "|".join(
+                    f"{v['source_type']}:{v['value']}" for v in conflict["values"]
+                )
+                for src in g["sources"]:
+                    buffer.write(
+                        f"{gi},{src.get('ic', '')},{src.get('name', '')},{src.get('dob', '')},"
+                        f"{src['source_type']},{src['dataset_id']},{g['confidence']},"
+                        f'{conflict["field"]},{conflict["severity"]},"{values_str}"\n'
+                    )
+    elif worklist_type == "duplicates":
+        for gi, g in enumerate(groups):
+            if len(g["sources"]) <= 1:
+                continue
+            sources = g["sources"]
+            for src in sources:
+                buffer.write(
+                    f"{gi},{src.get('ic', '')},{src.get('name', '')},{src.get('dob', '')},"
+                    f"{src['source_type']},{src['dataset_id']},{g['confidence']},,,\n"
+                )
+
+    buffer.seek(0)
+    filename = f"SmartDQC_worklist_{worklist_type}.csv"
+    return StreamingResponse(
+        iter([buffer.read()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/entity/link")
