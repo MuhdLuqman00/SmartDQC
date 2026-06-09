@@ -1,13 +1,5 @@
 """Tests for reconciliation summary + worklist (P2-5)."""
 
-import os
-import pytest
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="requires a live PostgreSQL DATABASE_URL",
-)
-
 
 def test_reconciliation_summary_in_link_all(client_with_db, test_cache_with_data):
     """Test /entity/link/all includes reconciliation block."""
@@ -47,6 +39,22 @@ def test_worklist_conflicts_csv(client_with_db, test_cache_with_data):
     )
 
     response = client_with_db.get("/entity/link/all/worklist?type=conflicts")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv"
+    content = response.content.decode()
+    assert "group_index" in content or content == ""  # May be empty if no conflicts
+
+
+def test_worklist_duplicates_csv(client_with_db, test_cache_with_data):
+    """Test /entity/link/all/worklist?type=duplicates returns CSV."""
+    cache_id, dataset_id = test_cache_with_data
+
+    client_with_db.post(
+        "/entity/records/sync",
+        json={"dataset_ids": [dataset_id]},
+    )
+
+    response = client_with_db.get("/entity/link/all/worklist?type=duplicates")
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/csv"
     content = response.content.decode()

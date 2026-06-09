@@ -1,13 +1,5 @@
 """Tests for /entity/link/all endpoint (P2-3)."""
 
-import os
-import pytest
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="requires a live PostgreSQL DATABASE_URL",
-)
-
 
 def test_link_all_across_persisted_datasets(client_with_db, test_cache_with_data):
     """Test /entity/link/all links across persisted datasets not in hot cache."""
