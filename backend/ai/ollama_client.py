@@ -7,19 +7,18 @@ import httpx
 logger = logging.getLogger("smartdqc.ollama")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:4b-q4_K_M")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e2b-it-qat")
 # Keep the model resident in memory between requests so the first click after
 # an idle period doesn't pay a cold model-load (the root cause of the post-idle
-# "failed to generate narrative" 500). "-1" = keep loaded indefinitely; can be
-# overridden with a duration like "30m".
-OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
-# Thinking ("reasoning") models like Qwen3 route their answer into a separate
-# `thinking` field and leave `response` empty — especially with format="json" —
-# which surfaced as "AI insight generation returned no output". We therefore
-# DEFAULT to `think: false` (the active Qwen3.5 narrative model is a hybrid
-# reasoner) so the model writes its answer straight to `response` instead of
-# burning latency on reasoning tokens. Set OLLAMA_THINK=true to re-enable
-# reasoning. Left model-agnostic: non-thinking models ignore the flag.
+# "failed to generate narrative" 500). "-1" = keep loaded indefinitely (no
+# post-idle unload/CPU fallback); use a duration like "30m" only on a shared GPU.
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "-1")
+# Thinking ("reasoning") models route their answer into a separate `thinking`
+# field and leave `response` empty — especially with format="json" — which
+# surfaced as "AI insight generation returned no output". We therefore DEFAULT
+# to `think: false` so the model writes its answer straight to `response`.
+# Gemma 4 e2b is non-reasoning, so OLLAMA_THINK has no effect. Left model-
+# agnostic: non-thinking models ignore the flag.
 OLLAMA_THINK = os.getenv("OLLAMA_THINK", "false").strip().lower() != "false"
 # How long warmup may spend waiting for Ollama + pulling the model on boot.
 OLLAMA_PULL_TIMEOUT = float(os.getenv("OLLAMA_PULL_TIMEOUT", "1800"))
@@ -186,8 +185,10 @@ def generate(
             if resp.status_code == 200:
                 data = resp.json()
                 raw = re.sub(
-                    r"<think>.*?</think>", "",
-                    data.get("response", "") or "", flags=re.DOTALL,
+                    r"<think>.*?</think>",
+                    "",
+                    data.get("response", "") or "",
+                    flags=re.DOTALL,
                 ).strip()
                 # Thinking models may still leak the answer into `thinking`
                 # (e.g. format="json" with reasoning on). Salvage it so the
@@ -198,7 +199,9 @@ def generate(
                         logger.warning(
                             "Ollama '%s' returned empty response with %d chars of "
                             "thinking; using thinking content. Set OLLAMA_THINK=false "
-                            "to disable reasoning.", OLLAMA_MODEL, len(thinking),
+                            "to disable reasoning.",
+                            OLLAMA_MODEL,
+                            len(thinking),
                         )
                         raw = thinking
                 return raw
