@@ -278,7 +278,7 @@ export function UploadPage() {
     // multiple z-score cleans; show the pending state immediately.
     setImpactLoading(true);
     if (previewTimer.current) clearTimeout(previewTimer.current);
-    previewTimer.current = setTimeout(() => { void runPreview(next); }, 400);
+    previewTimer.current = setTimeout(() => { void runPreview(next); }, 700);
   };
 
   /* ── Step 2 → 3: validate mapping ─────────────────────────────────── */
@@ -972,7 +972,7 @@ export function UploadPage() {
                   return (
                     <div key={rule.code} style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '12px 16px', borderBottom: i < rules.length - 1 ? '1px solid var(--border)' : 'none' }}>
                       <label style={{ position: 'relative', width: 40, height: 22, flexShrink: 0, marginTop: 1, opacity: rule.locked ? 0.55 : 1 }}>
-                        <input type="checkbox" checked={rule.enabled} disabled={rule.locked} onChange={() => toggleCleanRule(rule.code)} style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
+                        <input type="checkbox" checked={rule.enabled} disabled={rule.locked} onChange={() => toggleCleanRule(rule.code)} aria-label={t(rule.en, rule.bm)} style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
                         <div style={{ position: 'absolute', inset: 0, borderRadius: 11, background: rule.enabled ? 'var(--kkm-blue)' : 'var(--border)', transition: 'background var(--transition)', cursor: rule.locked ? 'not-allowed' : 'pointer' }}>
                           <div style={{ position: 'absolute', width: 16, height: 16, borderRadius: '50%', background: '#fff', top: 3, left: rule.enabled ? 21 : 3, transition: 'left var(--transition)' }} />
                         </div>
