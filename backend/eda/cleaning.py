@@ -1529,7 +1529,10 @@ EVALUATED_RULES: dict[str, list[str]] = {
         "dropped_no_bmi",
     ],
     "general": [
+        "dropped_invalid_gender",
         "dropped_date_before_dob",
+        "dropped_measurement_outlier",
+        "dropped_bmi_outlier",
     ],
 }
 

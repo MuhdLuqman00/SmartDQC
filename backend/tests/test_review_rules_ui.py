@@ -120,12 +120,12 @@ def test_clean_rules_ncdc_has_review_rules():
     assert len(review) > 0
 
 
-def test_clean_rules_general_has_no_review_rules():
-    """general schema has empty REVIEW_EVALUATED_RULES so no review rules appear."""
+def test_clean_rules_general_has_review_rules():
+    """general schema surfaces the 18 universal column-presence-guarded review rules."""
     r = client.get("/clean/rules?data_type=general")
     assert r.status_code == 200
     review = [x for x in r.json()["rules"] if x["kind"] == "review"]
-    assert len(review) == 0
+    assert len(review) == 18
 
 
 def test_clean_rules_no_deferred():
