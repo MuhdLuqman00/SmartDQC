@@ -237,6 +237,76 @@ def _set_kategori_umur(df: pd.DataFrame) -> None:
         )
 
 
+def _compute_zscores_indicators(df, stats) -> None:
+    """WHO WAZ/HAZ/BAZ (BIV-clamped, rounded 2dp) + status classifications +
+    indicator flags + null-z-score exclusion (Rule 7, locked) + analyzable-only
+    indicator counts. Shared by the infant cleaners (myvass/ncdc) and reused by
+    the general infant cohort in Phase 4. Mutates df and stats in place. When
+    WHO tables are unavailable it records a zero null-z-score drop and returns,
+    matching the original `else` branch."""
+    if not ZSCORE_AVAILABLE:
+        stats["dropped_null_zscore"] = 0
+        return
+
+    df["WAZ"] = None
+    df["HAZ"] = None
+    df["BAZ"] = None
+
+    for idx in df.index:
+        # Skip already-excluded rows — z-scores on junk inputs are meaningless
+        if not df.loc[idx, "analyzable"]:
+            continue
+        age_days = df.loc[idx, "Age_Days"]
+        sex = df.loc[idx, "Gender"]
+        weight = df.loc[idx, "Berat_kg"]
+        height = df.loc[idx, "Tinggi_cm"]
+        bmi = df.loc[idx, "BMI"]
+
+        if pd.notna(age_days) and pd.notna(sex):
+            if pd.notna(weight):
+                waz = compute_zscore(weight, sex, age_days, "WAZ")
+                if waz is not None and BIV["WAZ"][0] <= waz <= BIV["WAZ"][1]:
+                    df.loc[idx, "WAZ"] = round(waz, 2)
+
+            if pd.notna(height):
+                haz = compute_zscore(height, sex, age_days, "HAZ")
+                if haz is not None and BIV["HAZ"][0] <= haz <= BIV["HAZ"][1]:
+                    df.loc[idx, "HAZ"] = round(haz, 2)
+
+            if pd.notna(bmi):
+                baz = compute_zscore(bmi, sex, age_days, "BAZ")
+                if baz is not None and BIV["BAZ"][0] <= baz <= BIV["BAZ"][1]:
+                    df.loc[idx, "BAZ"] = round(baz, 2)
+
+    df["WAZ_Status"] = df["WAZ"].apply(lambda z: classify_waz(z) if pd.notna(z) else None)
+    df["HAZ_Status"] = df["HAZ"].apply(lambda z: classify_haz(z) if pd.notna(z) else None)
+    df["BAZ_Status"] = df["BAZ"].apply(lambda z: classify_baz(z) if pd.notna(z) else None)
+
+    # Indicator flags (computed on all rows; excluded rows get False which is
+    # fine — they are never used in analytics)
+    df["Ind_Kurang_Berat_Badan"] = df["WAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
+    df["Ind_Bantut"] = df["HAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
+    df["Ind_Susut"] = df["BAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
+    df["Ind_Berlebihan_BB"] = df["BAZ"].apply(lambda z: z > 1 if pd.notna(z) else False)
+    df["Ind_Obes"] = df["BAZ"].apply(lambda z: z > 2 if pd.notna(z) else False)
+
+    # Rule 7: Flag rows with null z-scores (locked — always runs)
+    null_zscore = df["WAZ"].isna() | df["HAZ"].isna() | df["BAZ"].isna()
+    stats["dropped_null_zscore"] = int((null_zscore & df["analyzable"]).sum())
+    _exclude(df, null_zscore, "dropped_null_zscore")
+
+    # Normal indicator
+    df["Ind_Normal"] = ~(df["Ind_Kurang_Berat_Badan"] | df["Ind_Bantut"] | df["Ind_Susut"])
+
+    _a = df["analyzable"]
+    stats["ind_kurang_berat"] = int(df.loc[_a, "Ind_Kurang_Berat_Badan"].sum())
+    stats["ind_bantut"] = int(df.loc[_a, "Ind_Bantut"].sum())
+    stats["ind_susut"] = int(df.loc[_a, "Ind_Susut"].sum())
+    stats["ind_berlebihan_bb"] = int(df.loc[_a, "Ind_Berlebihan_BB"].sum())
+    stats["ind_obes"] = int(df.loc[_a, "Ind_Obes"].sum())
+    stats["ind_normal"] = int(df.loc[_a, "Ind_Normal"].sum())
+
+
 def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=None):
     """Review-for-review flags (Families 1-11).
 
@@ -705,67 +775,8 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, di
     df = _compute_bmi(df, drop_raw=True)
     _apply_bmi_outlier(df, stats, _on)
 
-    # Calculate WHO Z-scores (using daily LMS tables from Excel)
-    if ZSCORE_AVAILABLE:
-        df["WAZ"] = None
-        df["HAZ"] = None
-        df["BAZ"] = None
-
-        for idx in df.index:
-            # Skip already-excluded rows — z-scores on junk inputs are meaningless
-            if not df.loc[idx, "analyzable"]:
-                continue
-            age_days = df.loc[idx, "Age_Days"]
-            sex = df.loc[idx, "Gender"]
-            weight = df.loc[idx, "Berat_kg"]
-            height = df.loc[idx, "Tinggi_cm"]
-            bmi = df.loc[idx, "BMI"]
-
-            if pd.notna(age_days) and pd.notna(sex):
-                if pd.notna(weight):
-                    waz = compute_zscore(weight, sex, age_days, "WAZ")
-                    if waz is not None and BIV["WAZ"][0] <= waz <= BIV["WAZ"][1]:
-                        df.loc[idx, "WAZ"] = round(waz, 2)
-
-                if pd.notna(height):
-                    haz = compute_zscore(height, sex, age_days, "HAZ")
-                    if haz is not None and BIV["HAZ"][0] <= haz <= BIV["HAZ"][1]:
-                        df.loc[idx, "HAZ"] = round(haz, 2)
-
-                if pd.notna(bmi):
-                    baz = compute_zscore(bmi, sex, age_days, "BAZ")
-                    if baz is not None and BIV["BAZ"][0] <= baz <= BIV["BAZ"][1]:
-                        df.loc[idx, "BAZ"] = round(baz, 2)
-
-        df["WAZ_Status"] = df["WAZ"].apply(lambda z: classify_waz(z) if pd.notna(z) else None)
-        df["HAZ_Status"] = df["HAZ"].apply(lambda z: classify_haz(z) if pd.notna(z) else None)
-        df["BAZ_Status"] = df["BAZ"].apply(lambda z: classify_baz(z) if pd.notna(z) else None)
-
-        # Indicator flags (computed on all rows; excluded rows get False which is
-        # fine — they are never used in analytics)
-        df["Ind_Kurang_Berat_Badan"] = df["WAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
-        df["Ind_Bantut"] = df["HAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
-        df["Ind_Susut"] = df["BAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
-        df["Ind_Berlebihan_BB"] = df["BAZ"].apply(lambda z: z > 1 if pd.notna(z) else False)
-        df["Ind_Obes"] = df["BAZ"].apply(lambda z: z > 2 if pd.notna(z) else False)
-
-        # Rule 7: Flag rows with null z-scores (locked — always runs)
-        null_zscore = df["WAZ"].isna() | df["HAZ"].isna() | df["BAZ"].isna()
-        stats["dropped_null_zscore"] = int((null_zscore & df["analyzable"]).sum())
-        _exclude(df, null_zscore, "dropped_null_zscore")
-
-        # Normal indicator
-        df["Ind_Normal"] = ~(df["Ind_Kurang_Berat_Badan"] | df["Ind_Bantut"] | df["Ind_Susut"])
-
-        _a = df["analyzable"]
-        stats["ind_kurang_berat"] = int(df.loc[_a, "Ind_Kurang_Berat_Badan"].sum())
-        stats["ind_bantut"] = int(df.loc[_a, "Ind_Bantut"].sum())
-        stats["ind_susut"] = int(df.loc[_a, "Ind_Susut"].sum())
-        stats["ind_berlebihan_bb"] = int(df.loc[_a, "Ind_Berlebihan_BB"].sum())
-        stats["ind_obes"] = int(df.loc[_a, "Ind_Obes"].sum())
-        stats["ind_normal"] = int(df.loc[_a, "Ind_Normal"].sum())
-    else:
-        stats["dropped_null_zscore"] = 0
+    # WHO z-scores + indicator flags + null-z-score exclusion (shared battery).
+    _compute_zscores_indicators(df, stats)
 
     # Age category column
     _set_kategori_umur(df)
@@ -989,64 +1000,8 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict
     else:
         stats["dropped_duplicate_mykid"] = 0
 
-    # Calculate WHO Z-scores (using daily LMS tables from Excel)
-    if ZSCORE_AVAILABLE:
-        df["WAZ"] = None
-        df["HAZ"] = None
-        df["BAZ"] = None
-
-        for idx in df.index:
-            if not df.loc[idx, "analyzable"]:
-                continue
-            age_days = df.loc[idx, "Age_Days"]
-            sex = df.loc[idx, "Gender"]
-            weight = df.loc[idx, "Berat_kg"]
-            height = df.loc[idx, "Tinggi_cm"]
-            bmi = df.loc[idx, "BMI"]
-
-            if pd.notna(age_days) and pd.notna(sex):
-                if pd.notna(weight):
-                    waz = compute_zscore(weight, sex, age_days, "WAZ")
-                    if waz is not None and BIV["WAZ"][0] <= waz <= BIV["WAZ"][1]:
-                        df.loc[idx, "WAZ"] = round(waz, 2)
-
-                if pd.notna(height):
-                    haz = compute_zscore(height, sex, age_days, "HAZ")
-                    if haz is not None and BIV["HAZ"][0] <= haz <= BIV["HAZ"][1]:
-                        df.loc[idx, "HAZ"] = round(haz, 2)
-
-                if pd.notna(bmi):
-                    baz = compute_zscore(bmi, sex, age_days, "BAZ")
-                    if baz is not None and BIV["BAZ"][0] <= baz <= BIV["BAZ"][1]:
-                        df.loc[idx, "BAZ"] = round(baz, 2)
-
-        df["WAZ_Status"] = df["WAZ"].apply(lambda z: classify_waz(z) if pd.notna(z) else None)
-        df["HAZ_Status"] = df["HAZ"].apply(lambda z: classify_haz(z) if pd.notna(z) else None)
-        df["BAZ_Status"] = df["BAZ"].apply(lambda z: classify_baz(z) if pd.notna(z) else None)
-
-        # Indicator flags
-        df["Ind_Kurang_Berat_Badan"] = df["WAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
-        df["Ind_Bantut"] = df["HAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
-        df["Ind_Susut"] = df["BAZ"].apply(lambda z: z < -2 if pd.notna(z) else False)
-        df["Ind_Berlebihan_BB"] = df["BAZ"].apply(lambda z: z > 1 if pd.notna(z) else False)
-        df["Ind_Obes"] = df["BAZ"].apply(lambda z: z > 2 if pd.notna(z) else False)
-
-        # Rule 7: Flag rows with null z-scores (locked — always runs)
-        null_zscore = df["WAZ"].isna() | df["HAZ"].isna() | df["BAZ"].isna()
-        stats["dropped_null_zscore"] = int((null_zscore & df["analyzable"]).sum())
-        _exclude(df, null_zscore, "dropped_null_zscore")
-
-        df["Ind_Normal"] = ~(df["Ind_Kurang_Berat_Badan"] | df["Ind_Bantut"] | df["Ind_Susut"])
-
-        _a = df["analyzable"]
-        stats["ind_kurang_berat"] = int(df.loc[_a, "Ind_Kurang_Berat_Badan"].sum())
-        stats["ind_bantut"] = int(df.loc[_a, "Ind_Bantut"].sum())
-        stats["ind_susut"] = int(df.loc[_a, "Ind_Susut"].sum())
-        stats["ind_berlebihan_bb"] = int(df.loc[_a, "Ind_Berlebihan_BB"].sum())
-        stats["ind_obes"] = int(df.loc[_a, "Ind_Obes"].sum())
-        stats["ind_normal"] = int(df.loc[_a, "Ind_Normal"].sum())
-    else:
-        stats["dropped_null_zscore"] = 0
+    # WHO z-scores + indicator flags + null-z-score exclusion (shared battery).
+    _compute_zscores_indicators(df, stats)
 
     # Age category column
     _set_kategori_umur(df)
