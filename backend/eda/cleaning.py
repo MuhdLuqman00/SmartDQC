@@ -172,6 +172,71 @@ def _review_rule_on(code, enabled_rules) -> bool:
     return True
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHARED RULE BATTERY (Phase 2)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Per-rule bodies hoisted verbatim out of the named cleaners so the same logic
+# can serve every cohort (named presets now, the general superset in Phase 4).
+# Each helper mutates df/stats in place and takes an `on(code) -> bool` gate so
+# the caller's enabled_rules selection is honoured. Order is still owned by the
+# caller: these are called in the cleaner's existing sequence, preserving the
+# first-rule-wins exclusion attribution that the golden snapshots pin.
+
+def _apply_measurement_outlier(df, stats, profile, on) -> None:
+    """Flag rows whose weight/height fall outside the cohort plausibility bounds."""
+    berat_bad = (df["Berat_kg"] < profile.berat_min) | (df["Berat_kg"] > profile.berat_max)
+    tinggi_bad = (df["Tinggi_cm"] < profile.tinggi_min) | (df["Tinggi_cm"] > profile.tinggi_max)
+    outlier_mask = (berat_bad & df["Berat_kg"].notna()) | (tinggi_bad & df["Tinggi_cm"].notna())
+    if on("dropped_measurement_outlier"):
+        stats["dropped_measurement_outlier"] = int((outlier_mask & df["analyzable"]).sum())
+        _exclude(df, outlier_mask, "dropped_measurement_outlier")
+    else:
+        stats["dropped_measurement_outlier"] = 0
+
+
+def _apply_no_measurement(df, stats, on) -> None:
+    """Flag rows that carry neither a weight nor a height."""
+    no_meas = df["Berat_kg"].isna() & df["Tinggi_cm"].isna()
+    if on("dropped_no_measurement"):
+        stats["dropped_no_measurement"] = int((no_meas & df["analyzable"]).sum())
+        _exclude(df, no_meas, "dropped_no_measurement")
+    else:
+        stats["dropped_no_measurement"] = 0
+
+
+def _compute_bmi(df: pd.DataFrame, *, drop_raw: bool = True) -> pd.DataFrame:
+    """Recompute BMI from weight/height. When drop_raw, source BMI columns are
+    discarded first (returns a new frame, so callers must reassign df)."""
+    if drop_raw:
+        raw_bmi_cols = [c for c in df.columns if "bmi" in c.lower() and c != "BMI"]
+        if raw_bmi_cols:
+            df = df.drop(columns=raw_bmi_cols)
+    valid_both = df["Berat_kg"].notna() & df["Tinggi_cm"].notna() & (df["Tinggi_cm"] > 0)
+    df["BMI"] = np.where(
+        valid_both, (df["Berat_kg"] / ((df["Tinggi_cm"] / 100) ** 2)).round(2), np.nan
+    )
+    return df
+
+
+def _apply_bmi_outlier(df, stats, on) -> None:
+    """Flag implausibly high BMI (> BMI_MAX)."""
+    bmi_bad = df["BMI"].notna() & (df["BMI"] > BMI_MAX)
+    if on("dropped_bmi_outlier"):
+        stats["dropped_bmi_outlier"] = int((bmi_bad & df["analyzable"]).sum())
+        _exclude(df, bmi_bad, "dropped_bmi_outlier")
+    else:
+        stats["dropped_bmi_outlier"] = 0
+
+
+def _set_kategori_umur(df: pd.DataFrame) -> None:
+    """Bilingual age band column derived from Age_Days."""
+    if "Age_Days" in df.columns:
+        df["Kategori_Umur"] = np.where(
+            df["Age_Days"] < 730, "Bawah 2 Tahun",
+            np.where(df["Age_Days"] < 1826, "Bawah 5 Tahun", "5 Tahun ke Atas")
+        )
+
+
 def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=None):
     """Review-for-review flags (Families 1-11).
 
@@ -632,46 +697,13 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, di
     else:
         df["Tinggi_cm"] = np.nan
 
-    # Rule 2: Flag measurement outliers (infant cohort bounds)
+    # Rules 2/6/5: measurement outliers, no-measurement, BMI recompute + outlier
+    # (infant cohort bounds). Shared battery; caller-owned order preserved.
     profile = PROFILE_INFANT
-    berat_bad = (df["Berat_kg"] < profile.berat_min) | (df["Berat_kg"] > profile.berat_max)
-    tinggi_bad = (df["Tinggi_cm"] < profile.tinggi_min) | (df["Tinggi_cm"] > profile.tinggi_max)
-
-    outlier_mask = (berat_bad & df["Berat_kg"].notna()) | (tinggi_bad & df["Tinggi_cm"].notna())
-    if _on("dropped_measurement_outlier"):
-        stats["dropped_measurement_outlier"] = int((outlier_mask & df["analyzable"]).sum())
-        _exclude(df, outlier_mask, "dropped_measurement_outlier")
-    else:
-        stats["dropped_measurement_outlier"] = 0
-
-    # Rule 6: Flag rows with both measurements null
-    no_meas = df["Berat_kg"].isna() & df["Tinggi_cm"].isna()
-    if _on("dropped_no_measurement"):
-        stats["dropped_no_measurement"] = int((no_meas & df["analyzable"]).sum())
-        _exclude(df, no_meas, "dropped_no_measurement")
-    else:
-        stats["dropped_no_measurement"] = 0
-
-    # Drop raw BMI column from source (e.g. BMI_KG_M2) — will recalculate
-    raw_bmi_cols = [c for c in df.columns if "bmi" in c.lower() and c != "BMI"]
-    if raw_bmi_cols:
-        df = df.drop(columns=raw_bmi_cols)
-
-    # Calculate BMI from weight and height
-    valid_both = df["Berat_kg"].notna() & df["Tinggi_cm"].notna() & (df["Tinggi_cm"] > 0)
-    df["BMI"] = np.where(
-        valid_both,
-        (df["Berat_kg"] / ((df["Tinggi_cm"] / 100) ** 2)).round(2),
-        np.nan
-    )
-
-    # Rule 5: Flag implausible BMI > 40
-    bmi_bad = df["BMI"].notna() & (df["BMI"] > BMI_MAX)
-    if _on("dropped_bmi_outlier"):
-        stats["dropped_bmi_outlier"] = int((bmi_bad & df["analyzable"]).sum())
-        _exclude(df, bmi_bad, "dropped_bmi_outlier")
-    else:
-        stats["dropped_bmi_outlier"] = 0
+    _apply_measurement_outlier(df, stats, profile, _on)
+    _apply_no_measurement(df, stats, _on)
+    df = _compute_bmi(df, drop_raw=True)
+    _apply_bmi_outlier(df, stats, _on)
 
     # Calculate WHO Z-scores (using daily LMS tables from Excel)
     if ZSCORE_AVAILABLE:
@@ -736,11 +768,7 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, di
         stats["dropped_null_zscore"] = 0
 
     # Age category column
-    if "Age_Days" in df.columns:
-        df["Kategori_Umur"] = np.where(
-            df["Age_Days"] < 730, "Bawah 2 Tahun",
-            np.where(df["Age_Days"] < 1826, "Bawah 5 Tahun", "5 Tahun ke Atas")
-        )
+    _set_kategori_umur(df)
 
     # Final stats — final_count = analyzable rows, not len(df)
     _apply_review_flags(df, "myvass", _src_cols, find_col, enabled_rules, src_raw=_src_raw)
@@ -926,42 +954,13 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict
     df["Berat_kg"] = pd.to_numeric(df.get("Berat_kg"), errors="coerce")
     df["Tinggi_cm"] = pd.to_numeric(df.get("Tinggi_cm"), errors="coerce")
 
-    # Rule 2: Flag measurement outliers (infant cohort bounds)
+    # Rules 2/6/5: measurement outliers, no-measurement, BMI recompute + outlier
+    # (infant cohort bounds). Shared battery; caller-owned order preserved.
     profile = PROFILE_INFANT
-    berat_bad = (df["Berat_kg"] < profile.berat_min) | (df["Berat_kg"] > profile.berat_max)
-    tinggi_bad = (df["Tinggi_cm"] < profile.tinggi_min) | (df["Tinggi_cm"] > profile.tinggi_max)
-
-    outlier_mask = (berat_bad & df["Berat_kg"].notna()) | (tinggi_bad & df["Tinggi_cm"].notna())
-    if _on("dropped_measurement_outlier"):
-        stats["dropped_measurement_outlier"] = int((outlier_mask & df["analyzable"]).sum())
-        _exclude(df, outlier_mask, "dropped_measurement_outlier")
-    else:
-        stats["dropped_measurement_outlier"] = 0
-
-    # Rule 6: Flag no measurements
-    no_meas = df["Berat_kg"].isna() & df["Tinggi_cm"].isna()
-    if _on("dropped_no_measurement"):
-        stats["dropped_no_measurement"] = int((no_meas & df["analyzable"]).sum())
-        _exclude(df, no_meas, "dropped_no_measurement")
-    else:
-        stats["dropped_no_measurement"] = 0
-
-    # Drop raw BMI column from source — will recalculate
-    raw_bmi_cols = [c for c in df.columns if "bmi" in c.lower() and c != "BMI"]
-    if raw_bmi_cols:
-        df = df.drop(columns=raw_bmi_cols)
-
-    # Calculate BMI from weight and height
-    valid_both = df["Berat_kg"].notna() & df["Tinggi_cm"].notna() & (df["Tinggi_cm"] > 0)
-    df["BMI"] = np.where(valid_both, (df["Berat_kg"] / ((df["Tinggi_cm"] / 100) ** 2)).round(2), np.nan)
-
-    # Rule 5: Flag implausible BMI
-    bmi_bad = df["BMI"].notna() & (df["BMI"] > BMI_MAX)
-    if _on("dropped_bmi_outlier"):
-        stats["dropped_bmi_outlier"] = int((bmi_bad & df["analyzable"]).sum())
-        _exclude(df, bmi_bad, "dropped_bmi_outlier")
-    else:
-        stats["dropped_bmi_outlier"] = 0
+    _apply_measurement_outlier(df, stats, profile, _on)
+    _apply_no_measurement(df, stats, _on)
+    df = _compute_bmi(df, drop_raw=True)
+    _apply_bmi_outlier(df, stats, _on)
 
     # Rule 8 + placeholder guard: duplicate MyKid handling.
     # Same MyKid with the SAME DOB = one child re-measured -> keep most recent,
@@ -1050,11 +1049,7 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict
         stats["dropped_null_zscore"] = 0
 
     # Age category column
-    if "Age_Days" in df.columns:
-        df["Kategori_Umur"] = np.where(
-            df["Age_Days"] < 730, "Bawah 2 Tahun",
-            np.where(df["Age_Days"] < 1826, "Bawah 5 Tahun", "5 Tahun ke Atas")
-        )
+    _set_kategori_umur(df)
 
     # Final stats — final_count = analyzable rows, not len(df)
     _apply_review_flags(df, "ncdc", _src_cols, find_col, enabled_rules, src_raw=_src_raw)
@@ -1202,19 +1197,10 @@ def clean_kpm(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict]
 
     # Rule 6 & 7: Flag measurement outliers (school-age cohort bounds)
     profile = PROFILE_SCHOOL
-    berat_bad = (df["Berat_kg"] < profile.berat_min) | (df["Berat_kg"] > profile.berat_max)
-    tinggi_bad = (df["Tinggi_cm"] < profile.tinggi_min) | (df["Tinggi_cm"] > profile.tinggi_max)
+    _apply_measurement_outlier(df, stats, profile, _on)
 
-    outlier_mask = (berat_bad & df["Berat_kg"].notna()) | (tinggi_bad & df["Tinggi_cm"].notna())
-    if _on("dropped_measurement_outlier"):
-        stats["dropped_measurement_outlier"] = int((outlier_mask & df["analyzable"]).sum())
-        _exclude(df, outlier_mask, "dropped_measurement_outlier")
-    else:
-        stats["dropped_measurement_outlier"] = 0
-
-    # Calculate BMI
-    valid_both = df["Berat_kg"].notna() & df["Tinggi_cm"].notna() & (df["Tinggi_cm"] > 0)
-    df["BMI"] = np.where(valid_both, (df["Berat_kg"] / ((df["Tinggi_cm"] / 100) ** 2)).round(2), np.nan)
+    # Calculate BMI (KPM source carries no raw BMI column to discard)
+    df = _compute_bmi(df, drop_raw=False)
 
     # Rule 9: BMI Categories
     df["BMI_Category"] = df["BMI"].apply(_classify_bmi_school)
