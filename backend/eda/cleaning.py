@@ -1588,14 +1588,14 @@ RULE_REGISTRY: dict[str, dict] = {
     },
     "dropped_age_invalid": {
         "en": "Drop out-of-range age", "bm": "Buang umur luar julat",
-        "desc_en": "Remove rows with a negative or out-of-range computed age.",
-        "desc_bm": "Buang baris dengan umur terkira negatif atau luar julat.",
+        "desc_en": "Remove rows with a negative age (measurement date before birth date), or age outside the expected range — for under-5 data: above 60 months; for school-age data: outside 5–10 years.",
+        "desc_bm": "Buang baris dengan umur negatif (tarikh pengukuran sebelum tarikh lahir), atau umur di luar julat — data bawah-5: melebihi 60 bulan; data usia sekolah: di luar 5–10 tahun.",
         "locked": False,
     },
     "dropped_measurement_outlier": {
         "en": "Drop measurement outliers", "bm": "Buang pencilan pengukuran",
-        "desc_en": "Remove biologically implausible weight or height values.",
-        "desc_bm": "Buang nilai berat atau tinggi yang mustahil secara biologi.",
+        "desc_en": "Remove records where weight or height is outside the biologically plausible range. Under-5 cohort: weight 0.5–35 kg, height 30–130 cm. School-age cohort: weight 12–50 kg, height 100–160 cm.",
+        "desc_bm": "Buang rekod yang berat atau tingginya berada di luar julat biologi yang munasabah. Kohort bawah-5: berat 0.5–35 kg, tinggi 30–130 cm. Kohort usia sekolah: berat 12–50 kg, tinggi 100–160 cm.",
         "locked": False,
     },
     "dropped_no_measurement": {
@@ -1727,8 +1727,8 @@ REVIEW_RULE_REGISTRY: dict[str, dict] = {
     },
     "review_age_vacc_range": {
         "en": "Vaccination age out of range", "bm": "Umur vaksinasi luar julat",
-        "desc_en": "AGE_AT_VACCINATION is outside the plausible range (0–5 years).",
-        "desc_bm": "AGE_AT_VACCINATION berada di luar julat yang munasabah (0–5 tahun).",
+        "desc_en": "The child's recorded age at vaccination is negative or greater than 5 years — outside the expected range for this programme.",
+        "desc_bm": "Umur kanak-kanak semasa vaksinasi yang direkod adalah negatif atau melebihi 5 tahun — di luar julat yang dijangkakan untuk program ini.",
     },
     "review_daerah_null": {
         "en": "District missing", "bm": "Daerah hilang",
@@ -1752,8 +1752,8 @@ REVIEW_RULE_REGISTRY: dict[str, dict] = {
     },
     "review_height_unit_suspect": {
         "en": "Height unit suspect", "bm": "Unit tinggi diragui",
-        "desc_en": "Height exceeds 200 — likely recorded in cm instead of m, or vice versa.",
-        "desc_bm": "Ketinggian melebihi 200 — kemungkinan direkod dalam cm bukannya m, atau sebaliknya.",
+        "desc_en": "Height value exceeds 200, which is implausible for a child — likely entered in centimetres when metres were expected (e.g. 175 instead of 1.75), or an extra digit was added by mistake.",
+        "desc_bm": "Nilai tinggi melebihi 200, yang tidak munasabah untuk kanak-kanak — kemungkinan dimasukkan dalam sentimeter apabila meter dijangkakan (cth. 175 berbanding 1.75), atau digit tambahan dimasukkan secara tidak sengaja.",
     },
     "review_ghost_bmi": {
         "en": "Unverifiable source BMI", "bm": "BMI sumber tak boleh sah",
@@ -1776,9 +1776,9 @@ REVIEW_RULE_REGISTRY: dict[str, dict] = {
         "desc_bm": "Label klasifikasi tidak sepadan dengan julat z-skor. Ditangguhkan — ambang setiap paksi belum disahkan.",
     },
     "review_zscore_biv": {
-        "en": "Z-score out of range", "bm": "Z-skor luar julat",
-        "desc_en": "Source z-score is biologically implausible (absolute value greater than 6).",
-        "desc_bm": "Z-skor sumber tidak munasabah secara biologi (nilai mutlak melebihi 6).",
+        "en": "Z-score biologically implausible", "bm": "Z-skor tidak munasabah biologi",
+        "desc_en": "A WHO growth z-score (weight-for-age WAZ, height-for-age HAZ, or BMI-for-age BAZ) from the source file exceeds the biological implausibility limit (|value| > 6), suggesting a data entry error rather than a truly extreme measurement.",
+        "desc_bm": "Z-skor pertumbuhan WHO (berat-untuk-umur WAZ, tinggi-untuk-umur HAZ, atau BMI-untuk-umur BAZ) dari fail sumber melebihi had plausibiliti biologi (|nilai| > 6), menunjukkan kemungkinan kesilapan kemasukan data berbanding pengukuran sebenar yang melampau.",
     },
     "review_indicator_class_mismatch": {
         "en": "Indicator != classification", "bm": "Penunjuk != klasifikasi",
