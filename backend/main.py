@@ -518,7 +518,7 @@ def _resolve_cached_df(cache_id: Optional[str]) -> pd.DataFrame:
 
 
 # Stat keys that are survivor counts / transformations, not data-quality issues.
-_NON_ISSUE_STAT_KEYS = {"final_count", "raw_count", "valid_records", "total_dropped"}
+_NON_ISSUE_STAT_KEYS = {"final_count", "raw_count", "valid_records", "total_dropped", "review_count", "cohort"}
 
 
 def _summarise_cleaning(stats: dict, rows_before: int, rows_after: int) -> dict:
