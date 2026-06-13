@@ -38,11 +38,12 @@ from .config import (
     auto_suggest_mapping,
     detect_source_type,
     normalize_schema_type,
+    score_source_types,
 )
 from .ai.schema_mapper import ai_suggest_mapping, _needs_ai_assist
 from .eda.runner import run_eda, run_eda_auto, json_safe
 from .eda.kkm_quality_rules import analyze_kkm_quality
-from .eda.charts import build_chart_blocks
+from .eda.charts import build_chart_blocks, normalize_for_charts
 from .export.tableau import (
     build_aggregated_table,
     to_excel as tbl_excel,
@@ -65,6 +66,11 @@ from .ai.nlq import answer_query
 from .ai.ollama_client import OllamaError
 from .ml.corrections import flag_anomalies
 from .ml.risk_score import compute_risk_scores
+from .clinical_ranges import (
+    to_api_dict as _cr_to_api_dict,
+    validate_overrides as _cr_validate_overrides,
+    EDITABLE_KEYS as _CR_EDITABLE_KEYS,
+)
 from .export.report import build_pptx_bytes, build_pdf_bytes
 from .eda.kpi import (
     compute_kpi_dashboard,
@@ -498,6 +504,8 @@ class MappingBody(BaseModel):
     dataset_name: Optional[str] = None
     # B3: rule codes the user kept enabled. None ⇒ all rules (locked always run).
     enabled_rules: Optional[List[str]] = None
+    # Phase 3/4: per-run clinical range overrides (merged over global app_settings).
+    range_overrides: Optional[dict] = None
 
 
 def _resolve_cached_df(cache_id: Optional[str]) -> pd.DataFrame:
@@ -1473,6 +1481,54 @@ def _compute_row_flags(df: "pd.DataFrame") -> "pd.Series":
 _FLAG_COLS = ("analyzable", "exclude_reason")
 
 
+def _humanize_exclude_reason(code_str: str) -> str:
+    """Map semicolon-joined rule codes to human-readable EN labels.
+
+    Unknown codes pass through unchanged so no information is lost.
+    """
+    if not code_str:
+        return code_str
+    from .eda.cleaning import RULE_REGISTRY
+    parts = []
+    for code in str(code_str).split(";"):
+        code = code.strip()
+        if not code:
+            continue
+        meta = RULE_REGISTRY.get(code) or {}
+        parts.append(meta.get("en") or code)
+    return "; ".join(parts)
+
+
+def _column_guide_df() -> "pd.DataFrame":
+    """Small reference DataFrame written as the 'Column Guide' sheet in full-view xlsx."""
+    return pd.DataFrame(
+        [
+            {
+                "Column": "analyzable",
+                "Description (EN)": (
+                    "TRUE if the row passed all quality rules and is included in analysis."
+                ),
+                "Keterangan (BM)": (
+                    "BENAR jika baris lulus semua peraturan kualiti dan disertakan dalam analisis."
+                ),
+                "Values": "TRUE / FALSE",
+            },
+            {
+                "Column": "exclude_reason",
+                "Description (EN)": (
+                    "Quality rules that excluded this row (semicolon-separated). "
+                    "Empty means the row is analyzable."
+                ),
+                "Keterangan (BM)": (
+                    "Peraturan kualiti yang menyingkirkan baris ini (dipisah titik koma). "
+                    "Kosong bermakna baris boleh dianalisis."
+                ),
+                "Values": "e.g. Drop invalid gender; Drop missing birth date",
+            },
+        ]
+    )
+
+
 def _analysis_view(df: "pd.DataFrame") -> "pd.DataFrame":
     """Analysis projection: analyzable rows only, both flag columns dropped.
 
@@ -1487,10 +1543,35 @@ def _analysis_view(df: "pd.DataFrame") -> "pd.DataFrame":
     return df.drop(columns=drop) if drop else df
 
 
+def _full_view(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Full view: every row + flag columns, prepared for export.
+
+    4a — flag cols reordered to front so reviewers see them immediately.
+    4b — exclude_reason codes mapped to human-readable EN labels.
+    4d — excluded rows sorted to bottom so the clean delta is obvious.
+    """
+    df = df.copy()
+    if "analyzable" in df.columns:
+        df = df.sort_values("analyzable", ascending=False, kind="stable")
+    if "exclude_reason" in df.columns:
+        df["exclude_reason"] = (
+            df["exclude_reason"]
+            .fillna("")
+            .apply(lambda v: _humanize_exclude_reason(v) if v else "")
+        )
+    flag_cols = [c for c in ("analyzable", "exclude_reason") if c in df.columns]
+    other_cols = [c for c in df.columns if c not in flag_cols]
+    return df[flag_cols + other_cols]
+
+
 def _download_view(df: "pd.DataFrame", view: str) -> "pd.DataFrame":
-    """Project a cached frame for download. ``full`` keeps every row + both
-    flag columns; ``analysis`` (default) returns clean rows only."""
-    return df if view == "full" else _analysis_view(df)
+    """Project a cached frame for download.
+
+    ``full`` — every row, flag columns reordered to front, rule codes humanised,
+    excluded rows sorted to bottom (see ``_full_view``).
+    ``analysis`` — analyzable rows only, flag columns dropped.
+    """
+    return _full_view(df) if view == "full" else _analysis_view(df)
 
 
 def _view_label(view: str) -> str:
@@ -1780,12 +1861,49 @@ def _profile_columns(df: pd.DataFrame) -> list[dict]:
     return cols
 
 
+# Bilingual rationale templates for re-route recommendations (5B).
+_REROUTE_RATIONALE: dict[str, tuple[str, str]] = {
+    "myvass": (
+        "Column names closely match the MyVASS/TASKA wide format. "
+        "Re-routing applies the MyVASS cleaner: age-based outlier removal, "
+        "WHO z-score computation, and duplicate identity checks.",
+        "Nama lajur sepadan dengan format MyVASS/TASKA lebar. "
+        "Penghalaian semula menggunakan pembersih MyVASS: pembuangan nilai terpinggir "
+        "berasaskan umur, pengiraan z-skor WHO, dan semakan identiti pendua.",
+    ),
+    "ncdc": (
+        "Column names suggest an NCDC (TASKA) wide-format dataset. "
+        "Re-routing applies NCDC-specific cleaning and quality rules.",
+        "Nama lajur mencadangkan set data format lebar NCDC (TASKA). "
+        "Penghalaian semula menggunakan pembersih dan peraturan kualiti khusus NCDC.",
+    ),
+    "kpm": (
+        "Column names suggest a KPM school-age dataset. "
+        "Re-routing applies school-age BMI categories and school identity validation.",
+        "Nama lajur mencadangkan set data umur sekolah KPM. "
+        "Penghalaian semula menggunakan kategori BMI umur sekolah dan pengesahan identiti sekolah.",
+    ),
+}
+
+# Minimum number of distinctive matched signals to surface a re-route card (5B).
+# Absolute count, deliberately below the hard-detect bar (1-2 signals) so the
+# card can actually fire on a general-bound file; the signals are distinctive
+# enough that a generic file matches zero. 5C's value-pattern evidence can later
+# justify raising this for noisier signal types.
+_REROUTE_MIN_SIGNALS = 1
+
+
 @app.post("/clean/detect-type")
 async def detect_type_endpoint(
     file: UploadFile = File(...),
     sheet: Optional[str] = None,
 ):
-    """Detect data type from file columns."""
+    """Detect data type from file columns.
+
+    When auto-detection resolves to ``general`` but soft-scoring finds a known
+    schema above the recommendation threshold, the response also carries a
+    ``recommendations`` list with re-route cards the user can approve.
+    """
     content = await file.read()
     filename = file.filename or ""
     try:
@@ -1794,6 +1912,41 @@ async def detect_type_endpoint(
         raise HTTPException(400, str(e))
 
     data_type = detect_data_type(df.columns.tolist(), filename)
+
+    # 5B: when auto-detect falls to general, surface AT MOST ONE re-route card.
+    #
+    # Gate on absolute matched-signal count (not a fraction): the hard detector
+    # fires at 1-2 absolute signals, so a fraction threshold over the multi-signal
+    # myvass list would sit ABOVE the hard bar and never trigger. The signals are
+    # distinctive (nama taska, ic no passport, …), so a generic file matches zero
+    # and never produces a card. Only ONE schema is recommended — ranked by
+    # matched_count, tie broken toward myvass (the auto-detectable canonical) so a
+    # column-identical myvass/ncdc pair can't throw two competing cards.
+    recommendations: list[dict] = []
+    if data_type == "general":
+        scores = score_source_types(df)
+        candidates = [s for s in scores if s["matched_count"] >= _REROUTE_MIN_SIGNALS]
+        if candidates:
+            candidates.sort(
+                key=lambda s: (s["matched_count"], s["type"] == "myvass"),
+                reverse=True,
+            )
+            best = candidates[0]
+            schema = best["type"]
+            rationale_en, rationale_bm = _REROUTE_RATIONALE.get(
+                schema,
+                (f"Dataset signals resemble {schema}.", f"Isyarat set data menyerupai {schema}."),
+            )
+            recommendations.append({
+                "kind": "reroute",
+                "type": schema,
+                "confidence": best["confidence"],
+                "matched_count": best["matched_count"],
+                "total_signals": best["total_signals"],
+                "signals": [s for s in best["signals"] if s["matched"]],
+                "rationale_en": rationale_en,
+                "rationale_bm": rationale_bm,
+            })
 
     return JSONResponse(
         content=json_safe(
@@ -1804,6 +1957,7 @@ async def detect_type_endpoint(
                 "total_columns": len(df.columns),
                 "columns": df.columns.tolist(),
                 "sheets": sheets or [],
+                "recommendations": recommendations,
             }
         )
     )
@@ -1832,16 +1986,20 @@ _BR_SEVERITY = {
 _BR_SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 
 
-def _actionable_findings(df: pd.DataFrame, limit: int = 6) -> list[dict]:
+def _actionable_findings(df: pd.DataFrame, limit: int = 6,
+                         range_overrides: dict | None = None) -> list[dict]:
     """Run the (otherwise unwired) KKM business-rule checker on the RAW frame and
     return a compact, PII-free list of the most actionable findings for B2.1.
 
     Only aggregate counts/percentages + the rule's own description/fix are
     surfaced — the checker's per-row `affected_rows` (which contain real data)
     are deliberately NOT returned. Defensive: never break quality-check.
+
+    `range_overrides` (global clinical-range settings) is forwarded so BR-02/BR-03
+    impossible-measurement bounds reflect saved operational overrides.
     """
     try:
-        report = analyze_kkm_quality(df)
+        report = analyze_kkm_quality(df, range_overrides)
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Actionable findings skipped (KKM checker failed): %s", exc)
         return []
@@ -1967,7 +2125,20 @@ async def quality_check_endpoint(
 
     # B2.1: prominent, actionable business-rule findings (future dates, dupes,
     # impossible measurements, …) computed on the raw frame — PII-free.
-    quality["actionable_findings"] = _actionable_findings(df)
+    # Forward global clinical-range overrides so BR-02/BR-03 bounds reflect Settings.
+    # Loaded via the app-global session (not a Depends) so the endpoint signature
+    # stays db-free; SessionLocal is None before lifespan runs → defaults apply.
+    from .db.init_db import SessionLocal as _qc_SessionLocal
+    _qc_overrides: dict = {}
+    if _qc_SessionLocal is not None:
+        _qc_db = _qc_SessionLocal()
+        try:
+            _qc_overrides = _load_clinical_range_overrides(_qc_db)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Clinical-range overrides unavailable for quality-check: %s", exc)
+        finally:
+            _qc_db.close()
+    quality["actionable_findings"] = _actionable_findings(df, range_overrides=_qc_overrides)
 
     return JSONResponse(content=json_safe(quality))
 
@@ -2018,8 +2189,18 @@ async def clean_run_endpoint(
         set(body.enabled_rules) if (body and body.enabled_rules is not None) else None
     )
     enabled = _effective_enabled_rules(_raw_body_rules, db)
+    # Best-effort, like _effective_enabled_rules above: a DB outage must NOT break
+    # the clean run (cleaning is in-memory; persistence below is already non-fatal).
+    # On failure fall back to registry defaults rather than 500 before cleaning.
     try:
-        cleaned_df, stats = clean_data(df, effective_type, enabled)
+        _global_ov = _load_clinical_range_overrides(db)
+    except Exception as exc:
+        logger.warning("Clinical range overrides unavailable; using defaults: %s", exc)
+        _global_ov = {}
+    _per_run_ov = (body.range_overrides if body and body.range_overrides else {})
+    _eff_overrides = {**_global_ov, **_per_run_ov} or None
+    try:
+        cleaned_df, stats = clean_data(df, effective_type, enabled, _eff_overrides)
     except Exception as e:
         raise HTTPException(500, f"Cleaning error: {str(e)}")
 
@@ -2651,6 +2832,12 @@ async def query_cached_seam(req: QueryCachedRequest):
     window = result.iloc[req.offset : req.offset + req.limit]
     rows = window.replace({np.nan: None}).to_dict(orient="records")
 
+    # 4e: add _exclude_label so the frontend can show humanized reason
+    # without touching the raw exclude_reason code string
+    for row in rows:
+        raw = row.get("exclude_reason") or ""
+        row["_exclude_label"] = _humanize_exclude_reason(raw) if raw else None
+
     return JSONResponse(
         content=json_safe(
             {
@@ -2682,7 +2869,30 @@ async def download_xlsx_endpoint(
 
     df = _download_view(entry["df"], view)
     timestamp = pd.Timestamp.now().strftime("%Y%m%d")
-    xlsx_bytes = cln_excel_typed(df)
+
+    if view == "full":
+        # 4c: two-sheet xlsx — data + Column Guide
+        _ic_kw = ("mykid", "ic_no", "no_kp", "ic_num", "passport", "ic")
+        text_cols = {
+            c for c in df.columns
+            if df[c].dtype == object or any(kw in c.lower() for kw in _ic_kw)
+        }
+        typed = df.copy()
+        for col in text_cols:
+            typed[col] = typed[col].where(typed[col].isna(), typed[col].astype(str))
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            typed.to_excel(writer, sheet_name=_view_sheet(view), index=False)
+            ws = writer.sheets[_view_sheet(view)]
+            for col_idx, col in enumerate(typed.columns, 1):
+                if col in text_cols:
+                    for row_idx in range(2, len(typed) + 2):
+                        ws.cell(row=row_idx, column=col_idx).number_format = "@"
+            _column_guide_df().to_excel(writer, sheet_name="Column Guide", index=False)
+        output.seek(0)
+        xlsx_bytes = output.read()
+    else:
+        xlsx_bytes = cln_excel_typed(df)
 
     return StreamingResponse(
         iter([xlsx_bytes]),
@@ -3106,7 +3316,9 @@ async def charts_blocks_endpoint(
             404, "cache_id not found — run /clean/run first or check the UUID"
         )
     try:
-        blocks = build_chart_blocks(entry["df"])
+        source_type = (entry.get("stats") or {}).get("source_type", "general")
+        df = normalize_for_charts(entry["df"].copy(), source_type)
+        blocks = build_chart_blocks(df, source_type=source_type)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("build_chart_blocks failed for %s: %s", cache_id, exc)
         raise HTTPException(500, f"Chart computation failed: {exc}")
@@ -5245,6 +5457,10 @@ def _set_setting(key: str, value, db) -> None:
     db.commit()
 
 
+def _load_clinical_range_overrides(db) -> dict:
+    return _get_setting("clinical.ranges", {}, db) or {}
+
+
 @app.get("/settings/thresholds")
 def get_thresholds(db=Depends(get_db)):
     return _get_setting("threshold.all", _DEFAULT_THRESHOLDS, db)
@@ -5486,3 +5702,31 @@ def post_kpi_targets(body: dict, user=Depends(require_admin), db=Depends(get_db)
         user_id=user.id,
     )
     return _kpi_targets_view(db)
+
+
+@app.get("/config/clinical-ranges")
+def get_clinical_ranges(db=Depends(get_db)):
+    overrides = _load_clinical_range_overrides(db)
+    return _cr_to_api_dict(overrides)
+
+
+@app.put("/config/clinical-ranges")
+def put_clinical_ranges(body: dict, db=Depends(get_db)):
+    ok, errors = _cr_validate_overrides(body)
+    if not ok:
+        raise HTTPException(status_code=422, detail={"errors": errors})
+    # Tier governance: only EDITABLE_KEYS have working override plumbing. Reject
+    # attempts to override read-only reference keys (WHO/PROXY/GEO/display-only)
+    # so the stored override set can never silently desync from displayed values.
+    _readonly = [k for k in body if k not in _CR_EDITABLE_KEYS]
+    if _readonly:
+        raise HTTPException(
+            status_code=422,
+            detail={"errors": [f"Key is read-only (reference standard): {k}" for k in _readonly]},
+        )
+    _set_setting("clinical.ranges", body, db)
+    _log_audit(
+        action="settings.clinical_ranges",
+        detail=f"{len(body)} key(s): {','.join(sorted(body.keys()))}",
+    )
+    return _cr_to_api_dict(body)

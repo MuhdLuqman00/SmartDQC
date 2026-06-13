@@ -9,14 +9,24 @@ import re
 from datetime import datetime
 from typing import Dict, List, Tuple
 
+from backend.clinical_ranges import get_range as _cr_get_range
+
+# br02/br03 bounds — DOM, doc §6. Sourced from clinical_ranges registry (Phase 2).
+# Intentionally looser than cohort cleaner bounds; flags only physiologically impossible.
+_BR02_LO, _BR02_HI = _cr_get_range("br02_weight_impossible")  # 10, 125 kg
+_BR03_LO, _BR03_HI = _cr_get_range("br03_height_impossible")  # 50, 200 cm
+
 
 class KKMQualityChecker:
     """Business rule validation for KKM school health measurement data"""
     
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame, range_overrides: dict | None = None):
         self.df = df
         self.issues = []
         self.affected_rows = {}  # Store rows affected by each rule
+        # Override-aware DOM bounds (default to module constants / registry defaults).
+        self._br02 = _cr_get_range("br02_weight_impossible", range_overrides)
+        self._br03 = _cr_get_range("br03_height_impossible", range_overrides)
         
     def check_all_rules(self) -> Dict:
         """Run all business rules and return consolidated report"""
@@ -95,9 +105,8 @@ class KKMQualityChecker:
             # Convert to numeric
             values = pd.to_numeric(self.df[col], errors='coerce')
             
-            # For 7-year-olds: 10-125 kg is reasonable range
-            outlier_low = values < 10
-            outlier_high = values > 125
+            outlier_low = values < self._br02[0]
+            outlier_high = values > self._br02[1]
             outliers = outlier_low | outlier_high
             
             if outliers.sum() > 0:
@@ -127,9 +136,8 @@ class KKMQualityChecker:
             # Convert to numeric
             values = pd.to_numeric(self.df[col], errors='coerce')
             
-            # For 7-year-olds: 50-200 cm is reasonable range
-            outlier_low = values < 50
-            outlier_high = values > 200
+            outlier_low = values < self._br03[0]
+            outlier_high = values > self._br03[1]
             outliers = outlier_low | outlier_high
             
             if outliers.sum() > 0:
@@ -387,15 +395,17 @@ class KKMQualityChecker:
                 self.affected_rows["BR-09"] = self.df[suspicious].head(100).to_dict('records')
 
 
-def analyze_kkm_quality(df: pd.DataFrame) -> Dict:
+def analyze_kkm_quality(df: pd.DataFrame, range_overrides: dict | None = None) -> Dict:
     """
     Main entry point for KKM data quality analysis
-    
+
     Args:
         df: DataFrame with KKM Berat & Tinggi data
-        
+        range_overrides: optional {registry_key: {min,max}} applied to BR-02/BR-03
+            (br02_weight_impossible / br03_height_impossible) for this run.
+
     Returns:
         Dictionary with quality report and affected rows
     """
-    checker = KKMQualityChecker(df)
+    checker = KKMQualityChecker(df, range_overrides)
     return checker.check_all_rules()

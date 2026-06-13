@@ -14,22 +14,24 @@ Key differences vs generic cleaning:
 
 import pandas as pd
 import numpy as np
+from backend.clinical_ranges import get_range as _cr_get_range, get_val as _cr_get_val
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants — sourced from clinical_ranges registry (Phase 2 rewire).
+# Override via global settings or per-run range_overrides.
 # ---------------------------------------------------------------------------
-BERAT_MIN, BERAT_MAX   = 12.0,  50.0  # kg  (BR-06)
-TINGGI_MIN, TINGGI_MAX = 100.0, 160.0  # cm  (BR-07)
-AGE_MIN_YEARS, AGE_MAX_YEARS = 6.0, 8.0
 
-# WHO BMI-for-age thresholds (7-year-old cohort, WHO 2007 reference)
-BMI_UNDERWEIGHT = 13.5
-BMI_OVERWEIGHT  = 16.5
-BMI_OBESE       = 18.5
+BERAT_MIN, BERAT_MAX   = _cr_get_range("school_weight")
+TINGGI_MIN, TINGGI_MAX = _cr_get_range("school_height")
+AGE_MIN_YEARS          = _cr_get_val("school_age_min")
+AGE_MAX_YEARS          = _cr_get_val("school_age_max")
 
-# Height-for-age proxies for 7-year-olds (approx ±2 SD from WHO median ~120 cm)
-STUNTED_THRESHOLD = 112.0
-TALL_THRESHOLD    = 132.0
+BMI_UNDERWEIGHT = _cr_get_val("bmi_underweight")
+BMI_OVERWEIGHT  = _cr_get_val("bmi_overweight")
+BMI_OBESE       = _cr_get_val("bmi_obese")
+
+STUNTED_THRESHOLD = _cr_get_val("stunted_threshold")
+TALL_THRESHOLD    = _cr_get_val("tall_threshold")
 
 VALID_NEGERI = {
     "JOHOR", "KEDAH", "KELANTAN", "MELAKA", "NEGERI SEMBILAN",

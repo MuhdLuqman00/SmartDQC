@@ -28,17 +28,24 @@ from ..config import INCOME_VALID, KKM_VACCINE_SET, AGENSI_SET, FACILITY_SET, ET
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════════════
+#
+# ── Aliases from clinical_ranges registry (Phase 2) ─────────────────────────
+# Values sourced from backend/clinical_ranges.py; names kept for backward compat.
+# Provenance (tier, source, recommended value + why) is in clinical_ranges.py
+# and Docs/clinical_ranges_provenance.md. Change via Settings / per-run override.
+from backend.clinical_ranges import (
+    get_range as _cr_get_range,
+    get_val   as _cr_get_val,
+    get_biv   as _cr_get_biv,
+)
 
-# Weight / height bounds (biologically plausible for 0–5 years)
-BERAT_MIN_INFANT, BERAT_MAX_INFANT = 0.5, 35.0      # kg (0-5 years)
-TINGGI_MIN_INFANT, TINGGI_MAX_INFANT = 30.0, 130.0  # cm (0-5 years)
+BERAT_MIN_INFANT,  BERAT_MAX_INFANT  = _cr_get_range("infant_weight")
+TINGGI_MIN_INFANT, TINGGI_MAX_INFANT = _cr_get_range("infant_height")
+BERAT_MIN_SCHOOL,  BERAT_MAX_SCHOOL  = _cr_get_range("school_weight")
+TINGGI_MIN_SCHOOL, TINGGI_MAX_SCHOOL = _cr_get_range("school_height")
 
-# Weight / height bounds for KPM (school age 6-8 years)
-BERAT_MIN_SCHOOL, BERAT_MAX_SCHOOL = 12.0, 50.0     # kg
-TINGGI_MIN_SCHOOL, TINGGI_MAX_SCHOOL = 100.0, 160.0 # cm
-
-BMI_MAX = 40.0
-AGE_MAX_MONTHS_INFANT = 60  # under 5 years
+BMI_MAX               = _cr_get_val("bmi_max")
+AGE_MAX_MONTHS_INFANT = int(_cr_get_val("infant_age_cap"))
 
 # Gender mapping
 GENDER_MAP = {
@@ -48,12 +55,8 @@ GENDER_MAP = {
     "MALE": "Male", "FEMALE": "Female",
 }
 
-# WHO BIV thresholds
-BIV = {
-    "WAZ": (-6.0, +5.0),
-    "HAZ": (-6.0, +6.0),
-    "BAZ": (-5.0, +5.0),
-}
+# biv_waz / biv_haz / biv_baz — WHO, doc §2. Collapsed true-dup with who_zscore._BIV.
+BIV = _cr_get_biv()  # {WAZ/HAZ/BAZ: (lo, hi)} — from clinical_ranges registry
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -67,26 +70,13 @@ BIV = {
 # values are unchanged from the original constants — extracting them here is a
 # behaviour-preserving refactor (golden snapshots pin this).
 
-@dataclass(frozen=True)
-class CohortProfile:
-    """Population-dependent plausibility bounds for one cohort."""
-    name: str
-    berat_min: float
-    berat_max: float
-    tinggi_min: float
-    tinggi_max: float
+# CohortProfile is defined in clinical_ranges; re-export for backward compat.
+from backend.clinical_ranges import CohortProfile, make_infant_profile, make_school_profile
 
-
-PROFILE_INFANT = CohortProfile(
-    name="infant",
-    berat_min=BERAT_MIN_INFANT, berat_max=BERAT_MAX_INFANT,
-    tinggi_min=TINGGI_MIN_INFANT, tinggi_max=TINGGI_MAX_INFANT,
-)
-PROFILE_SCHOOL = CohortProfile(
-    name="school",
-    berat_min=BERAT_MIN_SCHOOL, berat_max=BERAT_MAX_SCHOOL,
-    tinggi_min=TINGGI_MIN_SCHOOL, tinggi_max=TINGGI_MAX_SCHOOL,
-)
+# Default profiles — override-unaware (backward compat). Use make_*_profile(overrides)
+# inside cleaners when a per-run override needs to be honoured.
+PROFILE_INFANT = make_infant_profile()
+PROFILE_SCHOOL = make_school_profile()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -218,9 +208,10 @@ def _compute_bmi(df: pd.DataFrame, *, drop_raw: bool = True) -> pd.DataFrame:
     return df
 
 
-def _apply_bmi_outlier(df, stats, on) -> None:
-    """Flag implausibly high BMI (> BMI_MAX)."""
-    bmi_bad = df["BMI"].notna() & (df["BMI"] > BMI_MAX)
+def _apply_bmi_outlier(df, stats, on, bmi_max=BMI_MAX) -> None:
+    """Flag implausibly high BMI (> bmi_max). `bmi_max` is override-aware per run
+    (registry key `bmi_max`); defaults to the module constant for back-compat."""
+    bmi_bad = df["BMI"].notna() & (df["BMI"] > bmi_max)
     if on("dropped_bmi_outlier"):
         stats["dropped_bmi_outlier"] = int((bmi_bad & df["analyzable"]).sum())
         _exclude(df, bmi_bad, "dropped_bmi_outlier")
@@ -307,7 +298,8 @@ def _compute_zscores_indicators(df, stats) -> None:
     stats["ind_normal"] = int(df.loc[_a, "Ind_Normal"].sum())
 
 
-def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=None):
+def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=None,
+                        age_cap=AGE_MAX_MONTHS_INFANT):
     """Review-for-review flags (Families 1-11).
 
     Each block guards on the presence of its trigger column(s) so clean data
@@ -435,7 +427,7 @@ def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=N
                         _icdob.notna()
                         & (_ic_age_yrs >= 18)
                         & df["Age_Months"].notna()
-                        & (df["Age_Months"] < AGE_MAX_MONTHS_INFANT)
+                        & (df["Age_Months"] < age_cap)
                     )
                     _flag(df, _contra.fillna(False).astype(bool), "review_ic_age_contradiction")
     # review_mykid_invalid (Family 1, ncdc): MyKid uses the 12-digit format too.
@@ -470,7 +462,7 @@ def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=N
             def _band_from_months(m):
                 if pd.isna(m):
                     return None
-                return "u2" if m < 24 else ("u5" if m < AGE_MAX_MONTHS_INFANT else "o5")
+                return "u2" if m < 24 else ("u5" if m < age_cap else "o5")
             def _band_from_label(v):
                 if v is None or (isinstance(v, float) and pd.isna(v)):
                     return None
@@ -521,6 +513,7 @@ def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=N
         if _lat is not None and _lon is not None:
             _la = pd.to_numeric(_lat, errors="coerce")
             _lo = pd.to_numeric(_lon, errors="coerce")
+            # geo_bounds — GEO, doc §7. Malaysia's national lat/lon extent.
             _oob = (_la.notna() & ((_la < 1.0) | (_la > 7.5))) | \
                    (_lo.notna() & ((_lo < 99.5) | (_lo > 119.5)))
             _flag(df, _oob.fillna(False).astype(bool), "review_geo_out_of_bounds")
@@ -530,6 +523,7 @@ def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=N
         _h = _raw("tinggi_cm", "tinggi", "height", "panjang", "length", "length_height_cm")
         if _h is not None:
             _hv = pd.to_numeric(_h, errors="coerce")
+            # height_unit_suspect — DOM, doc §6. >200 cm for a child ⇒ likely cm/m error.
             _flag(df, _hv.notna() & (_hv > 200), "review_height_unit_suspect")
     if _on("review_ghost_bmi"):
         _b = _raw("bmi", "bmi_kg_m2")
@@ -660,13 +654,17 @@ def _apply_review_flags(df, source, src_cols, find_col, enabled_rules, src_raw=N
 # MYVASS CLEANING
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict]:
+def clean_myvass(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """Clean MyVASS data and compute WHO z-scores.
 
     Flag-then-filter: rows that fail quality rules are tagged with
     `analyzable=False` and `exclude_reason` instead of being physically
     dropped. The full frame is returned so callers can offer both a
     full-flagged download and an analysis-ready filtered view.
+
+    Args:
+        range_overrides: optional {registry_key: {min,max}|{value}} that
+            overrides clinical_ranges defaults for this run only.
 
     Returns:
         tuple: (cleaned_dataframe, statistics_dict)
@@ -698,6 +696,9 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, di
 
     _src_cols = list(df.columns)
     _src_raw = df.copy()  # pre-recompute snapshot for source-integrity flags (Fam 7-8)
+    # Override-aware operational bounds (DOM-tier; default to module constants).
+    _bmi_max = _cr_get_val("bmi_max", range_overrides)
+    _age_cap = _cr_get_val("infant_age_cap", range_overrides)
     gender_col = find_col(["jantina", "gender", "sex"])
     dob_col = find_col(["tarikh lahir", "dob", "date_of_birth", "birth"])
     weight_col = find_col(["berat", "weight"])
@@ -749,7 +750,7 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, di
     df["Age_Months"] = (df["Age_Days"] / 30.4375).round(2)
 
     # Rule 3: Flag age >= 60 months
-    age_invalid = df["Age_Months"].notna() & (df["Age_Months"] >= AGE_MAX_MONTHS_INFANT)
+    age_invalid = df["Age_Months"].notna() & (df["Age_Months"] >= _age_cap)
     if _on("dropped_age_over5"):
         stats["dropped_age_over5"] = int((age_invalid & df["analyzable"]).sum())
         _exclude(df, age_invalid, "dropped_age_over5")
@@ -769,11 +770,11 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, di
 
     # Rules 2/6/5: measurement outliers, no-measurement, BMI recompute + outlier
     # (infant cohort bounds). Shared battery; caller-owned order preserved.
-    profile = PROFILE_INFANT
+    profile = make_infant_profile(range_overrides)
     _apply_measurement_outlier(df, stats, profile, _on)
     _apply_no_measurement(df, stats, _on)
     df = _compute_bmi(df, drop_raw=True)
-    _apply_bmi_outlier(df, stats, _on)
+    _apply_bmi_outlier(df, stats, _on, _bmi_max)
 
     # WHO z-scores + indicator flags + null-z-score exclusion (shared battery).
     _compute_zscores_indicators(df, stats)
@@ -782,7 +783,8 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, di
     _set_kategori_umur(df)
 
     # Final stats — final_count = analyzable rows, not len(df)
-    _apply_review_flags(df, "myvass", _src_cols, find_col, enabled_rules, src_raw=_src_raw)
+    _apply_review_flags(df, "myvass", _src_cols, find_col, enabled_rules, src_raw=_src_raw,
+                        age_cap=_age_cap)
     stats["final_count"] = int(df["analyzable"].sum())
     stats["total_dropped"] = stats["raw_count"] - stats["final_count"]
     stats["review_count"] = int((df["review_reason"] != "").sum())
@@ -800,12 +802,15 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, di
 # NCDC CLEANING
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict]:
+def clean_ncdc(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """Clean NCDC (TASKA) data and compute WHO z-scores.
 
     Flag-then-filter: rows that fail quality rules are tagged with
     `analyzable=False` and `exclude_reason` instead of being physically
     dropped.
+
+    Args:
+        range_overrides: optional {registry_key: {min,max}|{value}} for this run.
 
     Returns:
         tuple: (cleaned_dataframe, statistics_dict)
@@ -893,6 +898,9 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict
         df["Year"] = None
     _src_cols = list(df.columns)
     _src_raw = df.copy()  # pre-recompute snapshot for source-integrity flags (Fam 7-8)
+    # Override-aware operational bounds (DOM-tier; default to module constants).
+    _bmi_max = _cr_get_val("bmi_max", range_overrides)
+    _age_cap = _cr_get_val("infant_age_cap", range_overrides)
 
     # Rule 1: Standardize and filter gender
     if gender_col:
@@ -953,7 +961,7 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict
     df["Age_Months"] = (df["Age_Days"] / 30.4375).round(2)
 
     # Rule 3: Flag negative age or age >= 60 months
-    age_invalid = (df["Age_Days"] < 0) | (df["Age_Months"] >= AGE_MAX_MONTHS_INFANT)
+    age_invalid = (df["Age_Days"] < 0) | (df["Age_Months"] >= _age_cap)
     if _on("dropped_age_invalid"):
         _mask = age_invalid & df["Age_Months"].notna()
         stats["dropped_age_invalid"] = int((_mask & df["analyzable"]).sum())
@@ -967,11 +975,11 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict
 
     # Rules 2/6/5: measurement outliers, no-measurement, BMI recompute + outlier
     # (infant cohort bounds). Shared battery; caller-owned order preserved.
-    profile = PROFILE_INFANT
+    profile = make_infant_profile(range_overrides)
     _apply_measurement_outlier(df, stats, profile, _on)
     _apply_no_measurement(df, stats, _on)
     df = _compute_bmi(df, drop_raw=True)
-    _apply_bmi_outlier(df, stats, _on)
+    _apply_bmi_outlier(df, stats, _on, _bmi_max)
 
     # Rule 8 + placeholder guard: duplicate MyKid handling.
     # Same MyKid with the SAME DOB = one child re-measured -> keep most recent,
@@ -1007,7 +1015,8 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict
     _set_kategori_umur(df)
 
     # Final stats — final_count = analyzable rows, not len(df)
-    _apply_review_flags(df, "ncdc", _src_cols, find_col, enabled_rules, src_raw=_src_raw)
+    _apply_review_flags(df, "ncdc", _src_cols, find_col, enabled_rules, src_raw=_src_raw,
+                        age_cap=_age_cap)
     stats["final_count"] = int(df["analyzable"].sum())
     stats["total_dropped"] = stats["raw_count"] - stats["final_count"]
     stats["review_count"] = int((df["review_reason"] != "").sum())
@@ -1027,7 +1036,7 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict
 # KPM CLEANING
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def clean_kpm(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict]:
+def clean_kpm(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """Clean KPM (school) data and calculate BMI categories.
 
     Flag-then-filter: rows that fail quality rules are tagged with
@@ -1151,7 +1160,7 @@ def clean_kpm(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict]
         df["Tinggi_cm"] = np.nan
 
     # Rule 6 & 7: Flag measurement outliers (school-age cohort bounds)
-    profile = PROFILE_SCHOOL
+    profile = make_school_profile(range_overrides)
     _apply_measurement_outlier(df, stats, profile, _on)
 
     # Calculate BMI (KPM source carries no raw BMI column to discard)
@@ -1199,7 +1208,7 @@ def clean_kpm(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict]
 # GENERIC CLEANING (unknown / near-known schemas)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def clean_general(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, dict]:
+def clean_general(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """Conservative cleaner for general / "almost-the-same-as-known" schemas.
 
     Assumes column mapping has already renamed columns toward the canonical
@@ -1237,6 +1246,10 @@ def clean_general(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, d
 
     _src_cols = list(df.columns)
     _src_raw = df.copy()  # pre-recompute snapshot for review-flag source-integrity checks
+    # Override-aware operational bounds (DOM-tier; default to module constants).
+    # Locals are independent of cohort_profile, so the None-profile path stays safe.
+    _bmi_max = _cr_get_val("bmi_max", range_overrides)
+    _age_cap = _cr_get_val("infant_age_cap", range_overrides)
 
     gender_col = find_col(["jantina", "gender", "sex"])
     dob_col = find_col(["tarikh lahir", "dob", "date of birth", "birth"])
@@ -1318,12 +1331,12 @@ def clean_general(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, d
     if len(_valid_age) == 0:
         cohort = "unknown"
         cohort_profile = None
-    elif _valid_age.median() < AGE_MAX_MONTHS_INFANT:
+    elif _valid_age.median() < _age_cap:
         cohort = "infant"
-        cohort_profile = PROFILE_INFANT
+        cohort_profile = make_infant_profile(range_overrides)
     else:
         cohort = "school"
-        cohort_profile = PROFILE_SCHOOL
+        cohort_profile = make_school_profile(range_overrides)
 
     # Implausible weight/height (Class B, cohort-dependent): flag the row out
     # against the detected cohort's bounds — non-destructive, like the named
@@ -1345,7 +1358,7 @@ def clean_general(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, d
     # (Class A universal): a BMI > BMI_MAX with present measurements is garbage,
     # so flag the row out like the named cleaners instead of nulling the value.
     df = _compute_bmi(df, drop_raw=False)
-    _apply_bmi_outlier(df, stats, _on)
+    _apply_bmi_outlier(df, stats, _on, _bmi_max)
 
     # Gate indicator computation on its required inputs (dataset-level). WHO
     # z-scores are infant (0-5y) references, so they only apply to the infant
@@ -1447,7 +1460,8 @@ def clean_general(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, d
         if n not in unavailable
     )
 
-    _apply_review_flags(df, "general", _src_cols, find_col, enabled_rules, src_raw=_src_raw)
+    _apply_review_flags(df, "general", _src_cols, find_col, enabled_rules, src_raw=_src_raw,
+                        age_cap=_age_cap)
     stats["final_count"] = int(df["analyzable"].sum())
     stats["total_dropped"] = stats["raw_count"] - stats["final_count"]
     stats["review_count"] = int((df["review_reason"] != "").sum())
@@ -1463,7 +1477,12 @@ def clean_general(df: pd.DataFrame, enabled_rules=None) -> tuple[pd.DataFrame, d
 # MAIN CLEANING DISPATCHER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def clean_data(df: pd.DataFrame, data_type: str, enabled_rules=None) -> tuple[pd.DataFrame, dict]:
+def clean_data(
+    df: pd.DataFrame,
+    data_type: str,
+    enabled_rules=None,
+    range_overrides: dict | None = None,
+) -> tuple[pd.DataFrame, dict]:
     """
     Clean data based on data type.
 
@@ -1475,6 +1494,9 @@ def clean_data(df: pd.DataFrame, data_type: str, enabled_rules=None) -> tuple[pd
         enabled_rules: optional set/collection of rule codes the user kept on
             (B3). None ⇒ every rule runs (legacy behaviour). Locked rules in
             RULE_REGISTRY always run regardless.
+        range_overrides: optional dict of {registry_key: {min, max} or {value}}
+            that overrides clinical_ranges defaults for THIS run only. Merged on
+            top of any global settings. None ⇒ registry defaults apply.
 
     Returns:
         tuple: (cleaned_dataframe, statistics_dict)
@@ -1482,14 +1504,14 @@ def clean_data(df: pd.DataFrame, data_type: str, enabled_rules=None) -> tuple[pd
     from backend.config import normalize_schema_type
     data_type = normalize_schema_type(data_type)
     if data_type == "kpm":
-        return clean_kpm(df, enabled_rules)
+        return clean_kpm(df, enabled_rules, range_overrides)
     elif data_type == "myvass":
-        return clean_myvass(df, enabled_rules)
+        return clean_myvass(df, enabled_rules, range_overrides)
     elif data_type == "ncdc":
-        return clean_ncdc(df, enabled_rules)
+        return clean_ncdc(df, enabled_rules, range_overrides)
     # general / any unsupported schema → conservative general cleaner (never
     # ValueError, never silently mis-routed to clean_myvass).
-    return clean_general(df, enabled_rules)
+    return clean_general(df, enabled_rules, range_overrides)
 
 
 # ── Evaluated-rule registry ──────────────────────────────────────────────────

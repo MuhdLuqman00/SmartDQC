@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from backend.clinical_ranges import get_biv as _cr_get_biv
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 # Default path to the folder containing the 6 WHO Excel files.
@@ -117,7 +118,7 @@ def compute_zscore(measurement: float, sex: str, age_days: float, indicator: str
             z = math.log(measurement / M) / S
         else:
             z = ((measurement / M) ** L - 1) / (L * S)
-        # WHO recommends capping at ±6 for implausible values
+        # zscore_cap — WHO, doc §2. WHO recommends capping at ±6 for implausible values
         if abs(z) > 6:
             return None
         return round(z, 3)
@@ -127,12 +128,8 @@ def compute_zscore(measurement: float, sex: str, age_days: float, indicator: str
 
 # ─── CLASSIFICATION ───────────────────────────────────────────────────────────
 
-# BIV (Biologically Implausible Values) thresholds per WHO/UNICEF
-_BIV = {
-    "WAZ": (-6, 5),    # WAZ < -6 or > +5
-    "HAZ": (-6, 6),    # HAZ < -6 or > +6
-    "BAZ": (-5, 5),    # BAZ < -5 or > +5
-}
+# _BIV sourced from clinical_ranges registry (Phase 2 rewire — collapses true-dup with cleaning.py BIV).
+_BIV = _cr_get_biv()
 
 def _is_biv(z, indicator: str) -> bool:
     """Return True if z-score is biologically implausible."""
@@ -141,6 +138,9 @@ def _is_biv(z, indicator: str) -> bool:
     lo, hi = _BIV.get(indicator, (-99, 99))
     return z < lo or z > hi
 
+# zscore_category_bands — WHO, doc §2. WHO Growth Standards z-score cutpoints that
+# define nutritional-status labels (the three classify_* functions below). Changing
+# a cutpoint changes reported prevalence — treat as fixed unless deliberately re-basing.
 def classify_waz(z):
     """Weight-for-Age Z-score classification (KKM / WHO 2006)."""
     if z is None:        return None

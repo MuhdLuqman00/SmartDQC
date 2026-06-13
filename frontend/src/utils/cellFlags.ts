@@ -1,81 +1,90 @@
-// Thresholds sourced verbatim from backend/cleaning/kkm.py constants
-// and backend/eda/kkm_quality_rules.py BR-02/BR-03.
-// Do NOT change these values without updating the backend constants.
+// Phase 4: thresholds sourced from GET /config/clinical-ranges at runtime.
+// Consumers fetch once on mount and pass a ClinicalThresholds object.
+// DEFAULT_CELL_THRESHOLDS is the fallback (same values as the registry defaults).
 
 import type React from 'react';
 
 export type CellFlag = 'danger' | 'warn' | 'ok';
 
-// Weight (kg) — 7-year-old KKM cohort
-const BERAT_IMPOSSIBLE_LOW  = 10.0;   // BR-02 biologically impossible
-const BERAT_IMPOSSIBLE_HIGH = 125.0;  // BR-02 biologically impossible
-const BERAT_CLINICAL_LOW    = 12.0;   // kkm.py BERAT_MIN
-const BERAT_CLINICAL_HIGH   = 50.0;   // kkm.py BERAT_MAX
+export interface ClinicalThresholds {
+  beratImpossibleLow:   number;  // br02_weight_impossible min
+  beratImpossibleHigh:  number;  // br02_weight_impossible max
+  beratClinicalLow:     number;  // school_weight min
+  beratClinicalHigh:    number;  // school_weight max
+  tinggiImpossibleLow:  number;  // br03_height_impossible min
+  tinggiImpossibleHigh: number;  // br03_height_impossible max
+  tinggiClinicalLow:    number;  // school_height min
+  tinggiClinicalHigh:   number;  // school_height max
+  bmiUnderweight:       number;  // bmi_underweight value
+  bmiObese:             number;  // bmi_obese value
+}
 
-// Height (cm) — 7-year-old KKM cohort
-const TINGGI_IMPOSSIBLE_LOW  = 50.0;  // BR-03 biologically impossible
-const TINGGI_IMPOSSIBLE_HIGH = 200.0; // BR-03 biologically impossible
-const TINGGI_CLINICAL_LOW    = 100.0; // kkm.py TINGGI_MIN
-const TINGGI_CLINICAL_HIGH   = 160.0; // kkm.py TINGGI_MAX
+export const DEFAULT_CELL_THRESHOLDS: ClinicalThresholds = {
+  beratImpossibleLow:   10.0,
+  beratImpossibleHigh:  125.0,
+  beratClinicalLow:     12.0,
+  beratClinicalHigh:    50.0,
+  tinggiImpossibleLow:  50.0,
+  tinggiImpossibleHigh: 200.0,
+  tinggiClinicalLow:    100.0,
+  tinggiClinicalHigh:   160.0,
+  bmiUnderweight:       13.5,
+  bmiObese:             18.5,
+};
 
-// BMI — WHO 2007 reference for 7-year-olds (kkm.py)
-const BMI_UNDERWEIGHT = 13.5;
-const BMI_OBESE       = 18.5;
-
-// Suspicious date bounds (kkm_quality_rules.py BR-09)
+// Date bounds — BR-09 logic, not a registry-backed range threshold
 const DATE_EARLIEST_MS = new Date('2008-01-01').getTime();
 const DATE_LATEST_MS   = new Date('2026-12-31').getTime();
 
 function isMissing(v: unknown): boolean {
   return v == null || v === '' || v === 'null' || v === 'None' || v === 'nan';
 }
-
 function isBeratCol(col: string): boolean {
   const c = col.toLowerCase();
   return c.includes('berat') && c.includes('kg');
 }
-
 function isTinggiCol(col: string): boolean {
   const c = col.toLowerCase();
   return c.includes('tinggi') && c.includes('cm');
 }
-
 function isBmiCol(col: string): boolean {
   return col.toLowerCase().includes('bmi');
 }
-
 function isDateCol(col: string): boolean {
   return col.toLowerCase().includes('tarikh');
 }
 
 /**
- * Classify a cell value as 'danger' (biologically impossible / clearly wrong),
- * 'warn' (out of clinical range, missing, or suspicious), or 'ok'.
- * Used for conditional formatting (Phase 2) and pre-save validation (Phase 3).
+ * Classify a cell value as 'danger', 'warn', or 'ok'.
+ * Pass live thresholds fetched from GET /config/clinical-ranges for accuracy.
  */
-export function classifyCell(col: string, value: unknown): CellFlag {
+export function classifyCell(
+  col: string,
+  value: unknown,
+  thresholds: ClinicalThresholds = DEFAULT_CELL_THRESHOLDS,
+): CellFlag {
   if (isMissing(value)) return 'warn';
 
   if (isBeratCol(col)) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 'warn';
-    if (n < BERAT_IMPOSSIBLE_LOW || n > BERAT_IMPOSSIBLE_HIGH) return 'danger';
-    if (n < BERAT_CLINICAL_LOW   || n > BERAT_CLINICAL_HIGH)   return 'warn';
+    if (n < thresholds.beratImpossibleLow || n > thresholds.beratImpossibleHigh) return 'danger';
+    if (n < thresholds.beratClinicalLow   || n > thresholds.beratClinicalHigh)   return 'warn';
     return 'ok';
   }
 
   if (isTinggiCol(col)) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 'warn';
-    if (n < TINGGI_IMPOSSIBLE_LOW || n > TINGGI_IMPOSSIBLE_HIGH) return 'danger';
-    if (n < TINGGI_CLINICAL_LOW   || n > TINGGI_CLINICAL_HIGH)   return 'warn';
+    if (n < thresholds.tinggiImpossibleLow || n > thresholds.tinggiImpossibleHigh) return 'danger';
+    if (n < thresholds.tinggiClinicalLow   || n > thresholds.tinggiClinicalHigh)   return 'warn';
     return 'ok';
   }
 
   if (isBmiCol(col)) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 'warn';
-    if (n < BMI_UNDERWEIGHT || n > BMI_OBESE) return 'warn';
+    if (n < thresholds.bmiUnderweight || n > thresholds.bmiObese) return 'warn';
     return 'ok';
   }
 
@@ -89,50 +98,146 @@ export function classifyCell(col: string, value: unknown): CellFlag {
   return 'ok';
 }
 
-/** Validate a proposed edit value before persisting. Client-side guardrail only —
- *  the backend still coerces dtype on receipt. */
-export function validateEdit(col: string, value: string): { ok: boolean; messageEN: string; messageBM: string } {
-  const ok = { ok: true, messageEN: '', messageBM: '' };
+export interface CellReason {
+  flag: Exclude<CellFlag, 'ok'>;
+  titleEN: string;
+  titleBM: string;
+  detailEN: string;
+  detailBM: string;
+}
 
-  if (value.trim() === '') return ok; // allow clearing — server handles null coercion
+/**
+ * Explain why a cell is flagged — human-readable counterpart to classifyCell.
+ * Returns null for 'ok' cells.
+ */
+export function describeCell(
+  col: string,
+  value: unknown,
+  thresholds: ClinicalThresholds = DEFAULT_CELL_THRESHOLDS,
+): CellReason | null {
+  if (isMissing(value)) {
+    return {
+      flag: 'warn',
+      titleEN: 'Missing value',     titleBM: 'Nilai tiada',
+      detailEN: 'No value recorded for this field.',
+      detailBM: 'Tiada nilai direkodkan untuk medan ini.',
+    };
+  }
 
   if (isBeratCol(col)) {
     const n = Number(value);
     if (!Number.isFinite(n)) return {
-      ok: false,
-      messageEN: 'Weight must be a number.',
-      messageBM: 'Berat mestilah nombor.',
+      flag: 'warn', titleEN: 'Not a number', titleBM: 'Bukan nombor',
+      detailEN: `"${String(value)}" is not a valid weight.`,
+      detailBM: `"${String(value)}" bukan berat yang sah.`,
     };
-    if (n < BERAT_IMPOSSIBLE_LOW || n > BERAT_IMPOSSIBLE_HIGH) return {
+    if (n < thresholds.beratImpossibleLow || n > thresholds.beratImpossibleHigh) return {
+      flag: 'danger', titleEN: 'Impossible weight', titleBM: 'Berat mustahil',
+      detailEN: `${n} kg is outside the possible range ${thresholds.beratImpossibleLow}–${thresholds.beratImpossibleHigh} kg.`,
+      detailBM: `${n} kg di luar julat mungkin ${thresholds.beratImpossibleLow}–${thresholds.beratImpossibleHigh} kg.`,
+    };
+    if (n < thresholds.beratClinicalLow || n > thresholds.beratClinicalHigh) return {
+      flag: 'warn',
+      titleEN: n < thresholds.beratClinicalLow ? 'Below clinical range' : 'Above clinical range',
+      titleBM: n < thresholds.beratClinicalLow ? 'Bawah julat klinikal' : 'Atas julat klinikal',
+      detailEN: `${n} kg is outside the expected ${thresholds.beratClinicalLow}–${thresholds.beratClinicalHigh} kg for this cohort.`,
+      detailBM: `${n} kg di luar jangkaan ${thresholds.beratClinicalLow}–${thresholds.beratClinicalHigh} kg untuk kohort ini.`,
+    };
+    return null;
+  }
+
+  if (isTinggiCol(col)) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return {
+      flag: 'warn', titleEN: 'Not a number', titleBM: 'Bukan nombor',
+      detailEN: `"${String(value)}" is not a valid height.`,
+      detailBM: `"${String(value)}" bukan tinggi yang sah.`,
+    };
+    if (n < thresholds.tinggiImpossibleLow || n > thresholds.tinggiImpossibleHigh) return {
+      flag: 'danger', titleEN: 'Impossible height', titleBM: 'Tinggi mustahil',
+      detailEN: `${n} cm is outside the possible range ${thresholds.tinggiImpossibleLow}–${thresholds.tinggiImpossibleHigh} cm.`,
+      detailBM: `${n} cm di luar julat mungkin ${thresholds.tinggiImpossibleLow}–${thresholds.tinggiImpossibleHigh} cm.`,
+    };
+    if (n < thresholds.tinggiClinicalLow || n > thresholds.tinggiClinicalHigh) return {
+      flag: 'warn',
+      titleEN: n < thresholds.tinggiClinicalLow ? 'Below clinical range' : 'Above clinical range',
+      titleBM: n < thresholds.tinggiClinicalLow ? 'Bawah julat klinikal' : 'Atas julat klinikal',
+      detailEN: `${n} cm is outside the expected ${thresholds.tinggiClinicalLow}–${thresholds.tinggiClinicalHigh} cm for this cohort.`,
+      detailBM: `${n} cm di luar jangkaan ${thresholds.tinggiClinicalLow}–${thresholds.tinggiClinicalHigh} cm untuk kohort ini.`,
+    };
+    return null;
+  }
+
+  if (isBmiCol(col)) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return {
+      flag: 'warn', titleEN: 'Not a number', titleBM: 'Bukan nombor',
+      detailEN: `"${String(value)}" is not a valid BMI.`,
+      detailBM: `"${String(value)}" bukan BMI yang sah.`,
+    };
+    if (n < thresholds.bmiUnderweight || n > thresholds.bmiObese) return {
+      flag: 'warn',
+      titleEN: n < thresholds.bmiUnderweight ? 'Underweight BMI' : 'Obese-range BMI',
+      titleBM: n < thresholds.bmiUnderweight ? 'BMI kurang berat' : 'BMI lingkungan obes',
+      detailEN: `BMI ${n} is outside the healthy ${thresholds.bmiUnderweight}–${thresholds.bmiObese} band (WHO 2007, age 7).`,
+      detailBM: `BMI ${n} di luar julat sihat ${thresholds.bmiUnderweight}–${thresholds.bmiObese} (WHO 2007, umur 7).`,
+    };
+    return null;
+  }
+
+  if (isDateCol(col)) {
+    const d = new Date(String(value));
+    if (isNaN(d.getTime())) return {
+      flag: 'warn', titleEN: 'Unreadable date', titleBM: 'Tarikh tidak terbaca',
+      detailEN: `"${String(value)}" could not be parsed as a date.`,
+      detailBM: `"${String(value)}" tidak dapat dibaca sebagai tarikh.`,
+    };
+    if (d.getTime() < DATE_EARLIEST_MS || d.getTime() > DATE_LATEST_MS) return {
+      flag: 'warn', titleEN: 'Unusual date', titleBM: 'Tarikh luar biasa',
+      detailEN: 'Date falls outside the expected 2008–2026 window.',
+      detailBM: 'Tarikh di luar jangkaan 2008–2026.',
+    };
+    return null;
+  }
+
+  return null;
+}
+
+/** Client-side guardrail before persisting an edit. Backend still coerces on receipt. */
+export function validateEdit(
+  col: string,
+  value: string,
+  thresholds: ClinicalThresholds = DEFAULT_CELL_THRESHOLDS,
+): { ok: boolean; messageEN: string; messageBM: string } {
+  const ok = { ok: true, messageEN: '', messageBM: '' };
+
+  if (value.trim() === '') return ok;
+
+  if (isBeratCol(col)) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return { ok: false, messageEN: 'Weight must be a number.', messageBM: 'Berat mestilah nombor.' };
+    if (n < thresholds.beratImpossibleLow || n > thresholds.beratImpossibleHigh) return {
       ok: false,
-      messageEN: `Weight must be between ${BERAT_IMPOSSIBLE_LOW}–${BERAT_IMPOSSIBLE_HIGH} kg.`,
-      messageBM: `Berat mestilah antara ${BERAT_IMPOSSIBLE_LOW}–${BERAT_IMPOSSIBLE_HIGH} kg.`,
+      messageEN: `Weight must be between ${thresholds.beratImpossibleLow}–${thresholds.beratImpossibleHigh} kg.`,
+      messageBM: `Berat mestilah antara ${thresholds.beratImpossibleLow}–${thresholds.beratImpossibleHigh} kg.`,
     };
     return ok;
   }
 
   if (isTinggiCol(col)) {
     const n = Number(value);
-    if (!Number.isFinite(n)) return {
+    if (!Number.isFinite(n)) return { ok: false, messageEN: 'Height must be a number.', messageBM: 'Tinggi mestilah nombor.' };
+    if (n < thresholds.tinggiImpossibleLow || n > thresholds.tinggiImpossibleHigh) return {
       ok: false,
-      messageEN: 'Height must be a number.',
-      messageBM: 'Tinggi mestilah nombor.',
-    };
-    if (n < TINGGI_IMPOSSIBLE_LOW || n > TINGGI_IMPOSSIBLE_HIGH) return {
-      ok: false,
-      messageEN: `Height must be between ${TINGGI_IMPOSSIBLE_LOW}–${TINGGI_IMPOSSIBLE_HIGH} cm.`,
-      messageBM: `Tinggi mestilah antara ${TINGGI_IMPOSSIBLE_LOW}–${TINGGI_IMPOSSIBLE_HIGH} cm.`,
+      messageEN: `Height must be between ${thresholds.tinggiImpossibleLow}–${thresholds.tinggiImpossibleHigh} cm.`,
+      messageBM: `Tinggi mestilah antara ${thresholds.tinggiImpossibleLow}–${thresholds.tinggiImpossibleHigh} cm.`,
     };
     return ok;
   }
 
   if (isBmiCol(col)) {
     const n = Number(value);
-    if (!Number.isFinite(n)) return {
-      ok: false,
-      messageEN: 'BMI must be a number.',
-      messageBM: 'BMI mestilah nombor.',
-    };
+    if (!Number.isFinite(n)) return { ok: false, messageEN: 'BMI must be a number.', messageBM: 'BMI mestilah nombor.' };
     return ok;
   }
 
@@ -141,15 +246,7 @@ export function validateEdit(col: string, value: string): { ok: boolean; message
 
 /** Returns style overrides for a flagged cell. Spread onto the <td> style prop. */
 export function cellFlagStyle(flag: CellFlag): React.CSSProperties {
-  if (flag === 'danger') return {
-    background:  'var(--danger-bg)',
-    borderLeft:  '3px solid var(--danger)',
-    paddingLeft: 11,
-  };
-  if (flag === 'warn') return {
-    background:  'var(--warning-bg)',
-    borderLeft:  '3px solid var(--warning)',
-    paddingLeft: 11,
-  };
+  if (flag === 'danger') return { background: 'var(--danger-bg)', borderLeft: '3px solid var(--danger)', paddingLeft: 11 };
+  if (flag === 'warn')   return { background: 'var(--warning-bg)', borderLeft: '3px solid var(--warning)', paddingLeft: 11 };
   return {};
 }

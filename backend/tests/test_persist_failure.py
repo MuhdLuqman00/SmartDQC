@@ -25,8 +25,9 @@ def _stub_clean(monkeypatch):
         main, "_cache_get",
         lambda cid: {"stats": {"filename": "f.csv", "source_type": "unknown"}},
     )
-    # clean_data now takes an optional enabled_rules (B3); stub matches the arity.
-    monkeypatch.setattr(main, "clean_data", lambda d, t, e=None: (d, {"source_type": t}))
+    # clean_data takes optional enabled_rules (B3) + range_overrides (clinical
+    # ranges); stub matches the current arity.
+    monkeypatch.setattr(main, "clean_data", lambda d, t, e=None, r=None: (d, {"source_type": t}))
     monkeypatch.setattr(
         main, "run_eda_auto",
         lambda d, t: {"data_quality_score": {"score": 80.0, "grade": "B"}},

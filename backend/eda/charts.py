@@ -5,7 +5,70 @@ COLORS = ['#38d9c0', '#8b5cf6', '#faad14', '#ef4444', '#3b82f6',
           '#10b981', '#f97316', '#ec4899', '#06b6d4', '#a855f7']
 
 
-def build_chart_blocks(df: pd.DataFrame) -> dict:
+def normalize_for_charts(df: pd.DataFrame, source_type: str = None) -> pd.DataFrame:
+    """Rename mixed-case cleaner columns to lowercase canonical names, derive the
+    age prerequisite, and add WHO z-scores — the full pre-chart normalisation.
+
+    Called in two contexts:
+    - /charts/blocks endpoint: the cached cleaned frame carries mixed-case
+      columns (Berat_kg, Tinggi_cm, Tarikh_Lahir, Age_Months) with NO lowercase
+      analytic columns. Pass source_type to apply the rename + age derivation so
+      add_who_zscores can compute waz/haz/baz, *_class, and ind_*_zscore — which
+      in turn unlock the z-score distribution/scatter/class-pie and trend_by_year
+      charts (the 12 that were silently lost before).
+    - run_eda: df is already renamed to lowercase and add_age_columns has already
+      produced age_months_computed; omit source_type. The age derivation below is
+      guarded on "missing", so run_eda's existing column is left untouched and
+      only add_who_zscores runs — behaviour identical to before.
+
+    The rename uses auto_suggest_mapping (same as run_eda_auto), so both paths
+    normalise identically. Duplicate labels after rename are deduplicated (keeps
+    first occurrence), mirroring run_eda's dedup guard.
+    """
+    if source_type:
+        from ..config import auto_suggest_mapping
+        mapping = auto_suggest_mapping(list(df.columns), source_type) or {}
+        inv_map = {v: k for k, v in mapping.items() if v and v in df.columns and v != k}
+        if inv_map:
+            df = df.rename(columns=inv_map)
+            if df.columns.duplicated().any():
+                df = df.loc[:, ~df.columns.duplicated()]
+
+    # The cached cleaned frame lacks three lowercase derived columns that
+    # build_chart_blocks (and add_who_zscores) read. run_eda creates each one
+    # BEFORE calling this helper, so every derivation below is guarded on
+    # "missing" — run_eda's own columns are left untouched and only the
+    # endpoint path (which has none of them) does the work. Mirrors the exact
+    # logic in runner.py (add_age_columns / lines 588, 617).
+
+    # 1. age_months_computed — sole prerequisite for add_who_zscores (the cached
+    #    frame ships Age_Months, not the lowercase canonical name). Unlocks all
+    #    z-score distribution/scatter/class-pie + the ind_*_zscore trend inputs.
+    if "age_months_computed" not in df.columns and {"tarikh_lahir", "tarikh_ukur"}.issubset(df.columns):
+        from ..utils.age import calc_age_months
+        tl = pd.to_datetime(df["tarikh_lahir"], errors="coerce", dayfirst=True, format="mixed")
+        tu = pd.to_datetime(df["tarikh_ukur"], errors="coerce", dayfirst=True, format="mixed")
+        df["age_months_computed"] = [calc_age_months(a, b) for a, b in zip(tl, tu)]
+
+    # 2. tahun_ukur — required by trend_by_year (mirrors runner.py:617).
+    if "tahun_ukur" not in df.columns and "tarikh_ukur" in df.columns:
+        dt = pd.to_datetime(df["tarikh_ukur"], errors="coerce", dayfirst=True, format="mixed")
+        df["tahun_ukur"] = dt.dt.year
+
+    # 3. status_bmi_grouped — feeds status_bmi_pie for the general/kpm path
+    #    (mirrors runner.py:588). Suppressed for myvass/ncdc inside build_chart_blocks.
+    if "status_bmi_grouped" not in df.columns and "status_bmi" in df.columns:
+        from ..config import BMI_GROUPED_MAP
+        df["status_bmi_grouped"] = (
+            df["status_bmi"].astype(str).str.strip().str.lower()
+            .map(BMI_GROUPED_MAP).fillna("lain-lain")
+        )
+
+    from .who_zscore import add_who_zscores
+    return add_who_zscores(df)
+
+
+def build_chart_blocks(df: pd.DataFrame, source_type: str = None) -> dict:
     charts = {}
 
     # ── Histograms ────────────────────────────────────────────────────────────
@@ -62,8 +125,9 @@ def build_chart_blocks(df: pd.DataFrame) -> dict:
             ],
         }
 
-    # ── Status BMI grouped pie ────────────────────────────────────────────────
-    if "status_bmi_grouped" in df.columns:
+    # ── Status BMI grouped pie (general schema only — myvass/ncdc use WHO z-score charts) ──
+    _zscore_schemas = {"myvass", "ncdc"}
+    if "status_bmi_grouped" in df.columns and source_type not in _zscore_schemas:
         vc = df["status_bmi_grouped"].value_counts()
         charts["status_bmi_pie"] = [
             {"label": k, "count": int(v)} for k, v in vc.items()]

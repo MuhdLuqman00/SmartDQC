@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { Download, Search, Pencil, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import { Download, Search, Pencil, AlertTriangle, Maximize2, Minimize2, ChevronDown, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 import { useSession } from '../context/SessionContext';
 import { SessionGuard } from '../components/SessionGuard';
 import { ColumnHistogram } from '../components/ColumnHistogram';
 import { ErrorRetry } from '../components/ErrorRetry';
-import { classifyCell, cellFlagStyle, validateEdit } from '../utils/cellFlags';
+import { CellFlagTooltip } from '../components/CellFlagTooltip';
+import { classifyCell, cellFlagStyle, validateEdit, describeCell, type CellReason, type ClinicalThresholds, DEFAULT_CELL_THRESHOLDS } from '../utils/cellFlags';
 
 // Virtual scroll constants — only ~40 rows mounted at a time so edit re-renders stay fast.
 const ROW_HEIGHT       = 38;  // px; keep in sync with td height style below
@@ -28,7 +28,8 @@ export function ExplorerPage() {
   const [query,          setQuery]          = useState('');
   const [sortCol,        setSortCol]        = useState('');
   const [sortDir,        setSortDir]        = useState<'asc' | 'desc'>('asc');
-  const [showFlaggedOnly, setShowFlaggedOnly] = useState(false);
+  const [showFlaggedOnly,    setShowFlaggedOnly]    = useState(false);
+  const [showAnalyzableOnly, setShowAnalyzableOnly] = useState(false);
 
   // ── Edit state ─────────────────────────────────────────────────────────────
   // editing.rowId = _row_id (stable iloc position) — safe under any sort/filter.
@@ -42,35 +43,43 @@ export function ExplorerPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // ── Histogram state ────────────────────────────────────────────────────────
-  const [histCol, setHistCol] = useState('');
+  const [histCol, setHistCol]   = useState('');
+  const [histOpen, setHistOpen] = useState(false);
 
-  // ── Fullscreen state ───────────────────────────────────────────────────────
-  // When the table is maximised it renders as a fixed overlay and the virtual
-  // scroll window grows to fill the viewport. viewportH tracks window height so
-  // the row math stays correct across resizes.
-  const [fullscreen, setFullscreen] = useState(false);
-  const [viewportH, setViewportH] = useState(
-    typeof window !== 'undefined' ? window.innerHeight : 800,
-  );
-  useEffect(() => {
-    if (!fullscreen) return;
-    const onResize = () => setViewportH(window.innerHeight);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
-    onResize();
-    window.addEventListener('resize', onResize);
-    window.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
+  // ── Flag tooltip state (hover/focus on a flagged cell) ──────────────────────
+  const [cellTip, setCellTip] = useState<{ reason: CellReason; rect: DOMRect } | null>(null);
+
+  // ── Live clinical thresholds from settings API ─────────────────────────────
+  const [cellThresholds, setCellThresholds] = useState<ClinicalThresholds>(DEFAULT_CELL_THRESHOLDS);
+
+  // ── Expand state ────────────────────────────────────────────────────────────
+  // Expanded keeps the table in normal page flow (sidebar/top-bar stay visible)
+  // but grows the scroll window down to the viewport bottom. The height is
+  // measured from the scroll container's own top — no fixed overlay, so the
+  // transformed .page-enter ancestor never traps it.
+  const [expanded, setExpanded] = useState(false);
+  const [measuredH, setMeasuredH] = useState(CONTAINER_HEIGHT);
+
+  useLayoutEffect(() => {
+    if (!expanded) return;
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      // Reserve the footer row (~30px) and a little breathing room at the page bottom.
+      setMeasuredH(Math.max(360, Math.floor(window.innerHeight - top - 58)));
     };
-  }, [fullscreen]);
+    recompute();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpanded(false); };
+    window.addEventListener('resize', recompute);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('resize', recompute);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [expanded]);
 
-  // Visible scroll height: fills the viewport (minus toolbar/footer chrome) when
-  // maximised, otherwise the fixed inline height.
-  const containerHeight = fullscreen ? Math.max(360, viewportH - 150) : CONTAINER_HEIGHT;
+  const containerHeight = expanded ? measuredH : CONTAINER_HEIGHT;
 
   // ── Fetch all rows from the stable-key seam ────────────────────────────────
   const loadRows = useCallback(() => {
@@ -88,19 +97,40 @@ export function ExplorerPage() {
 
   useEffect(() => { loadRows(); }, [loadRows]);
 
+  useEffect(() => {
+    type RangeEntry = { type: string; effective_min?: number; effective_max?: number; effective_value?: number };
+    api.get<Record<string, RangeEntry>>('/config/clinical-ranges').then(r => {
+      const d = r.data;
+      const pick = (key: string, field: 'effective_min' | 'effective_max' | 'effective_value', fallback: number) =>
+        d[key]?.[field] ?? fallback;
+      setCellThresholds({
+        beratImpossibleLow:   pick('br02_weight_impossible', 'effective_min',  DEFAULT_CELL_THRESHOLDS.beratImpossibleLow),
+        beratImpossibleHigh:  pick('br02_weight_impossible', 'effective_max',  DEFAULT_CELL_THRESHOLDS.beratImpossibleHigh),
+        beratClinicalLow:     pick('school_weight',          'effective_min',  DEFAULT_CELL_THRESHOLDS.beratClinicalLow),
+        beratClinicalHigh:    pick('school_weight',          'effective_max',  DEFAULT_CELL_THRESHOLDS.beratClinicalHigh),
+        tinggiImpossibleLow:  pick('br03_height_impossible', 'effective_min',  DEFAULT_CELL_THRESHOLDS.tinggiImpossibleLow),
+        tinggiImpossibleHigh: pick('br03_height_impossible', 'effective_max',  DEFAULT_CELL_THRESHOLDS.tinggiImpossibleHigh),
+        tinggiClinicalLow:    pick('school_height',          'effective_min',  DEFAULT_CELL_THRESHOLDS.tinggiClinicalLow),
+        tinggiClinicalHigh:   pick('school_height',          'effective_max',  DEFAULT_CELL_THRESHOLDS.tinggiClinicalHigh),
+        bmiUnderweight:       pick('bmi_underweight',        'effective_value', DEFAULT_CELL_THRESHOLDS.bmiUnderweight),
+        bmiObese:             pick('bmi_obese',              'effective_value', DEFAULT_CELL_THRESHOLDS.bmiObese),
+      });
+    }).catch(() => {}); // silently keep defaults on failure
+  }, []);
+
   // Reset scroll to top whenever the filter/sort changes
   useEffect(() => {
     setScrollTop(0);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [query, showFlaggedOnly, sortCol, sortDir]);
+  }, [query, showFlaggedOnly, showAnalyzableOnly, sortCol, sortDir]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
   const rows = allRows ?? [];
 
-  // _row_id and _flagged are internal metadata — hide from the visible column list.
+  // _row_id, _flagged, _exclude_label are internal metadata — hide from visible column list.
   const columns = useMemo(
     () => rows.length > 0
-      ? Object.keys(rows[0]).filter(c => c !== '_row_id' && c !== '_flagged')
+      ? Object.keys(rows[0]).filter(c => !c.startsWith('_'))
       : [],
     [rows],
   );
@@ -110,6 +140,11 @@ export function ExplorerPage() {
 
   const flaggedCount = useMemo(
     () => rows.filter(r => !!r['_flagged']).length,
+    [rows],
+  );
+
+  const excludedCount = useMemo(
+    () => rows.filter(r => r['_exclude_label'] != null).length,
     [rows],
   );
 
@@ -125,16 +160,22 @@ export function ExplorerPage() {
     [rows, activeHistCol],
   );
 
-  // ── Filter pipeline: flagged → search → sort ───────────────────────────────
+  // ── Filter pipeline: flagged → analyzable → search → sort ─────────────────
   const flagFiltered = useMemo(
     () => showFlaggedOnly ? rows.filter(r => !!r['_flagged']) : rows,
     [rows, showFlaggedOnly],
   );
 
+  // 4e: display-only filter; _row_id positions are unchanged so edits stay safe
+  const analyzableFiltered = useMemo(
+    () => showAnalyzableOnly ? flagFiltered.filter(r => r['_exclude_label'] == null) : flagFiltered,
+    [flagFiltered, showAnalyzableOnly],
+  );
+
   const searchFiltered = useMemo(() => {
-    if (!query) return flagFiltered;
+    if (!query) return analyzableFiltered;
     const q = query.toLowerCase();
-    return flagFiltered.filter(r =>
+    return analyzableFiltered.filter(r =>
       columns.some(c => String(r[c] ?? '').toLowerCase().includes(q))
     );
   }, [flagFiltered, query, columns]);
@@ -171,7 +212,7 @@ export function ExplorerPage() {
   // ── Edit commit (uses _row_id — safe under any filter/sort) ───────────────
   const commitEdit = useCallback(async () => {
     if (!editing || !cacheId) { setEditing(null); return; }
-    const validation = validateEdit(editing.col, editValue);
+    const validation = validateEdit(editing.col, editValue, cellThresholds);
     if (!validation.ok) {
       setEditError(`${validation.messageEN} / ${validation.messageBM}`);
       return;
@@ -188,7 +229,7 @@ export function ExplorerPage() {
       const hasDQF   = 'Data_Quality_Flag' in raw;
       const newFlagged = hasDQF
         ? raw['Data_Quality_Flag'] !== 'Valid'
-        : Object.keys(raw).some(col => classifyCell(col, raw[col]) !== 'ok');
+        : Object.keys(raw).some(col => classifyCell(col, raw[col], cellThresholds) !== 'ok');
       const updatedRow = { ...raw, _row_id: r.data.row_index, _flagged: newFlagged };
       setAllRows(prev => (prev ?? []).map(row =>
         (row['_row_id'] as number) === r.data.row_index ? updatedRow : row
@@ -207,100 +248,49 @@ export function ExplorerPage() {
     <SessionGuard>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{
-            fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 'var(--radius-pill)',
-            background: 'var(--surface-2)', border: '1px solid var(--border)',
-            color: 'var(--text-secondary)',
-          }}>
-            {filename}
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            {effectiveTotal?.toLocaleString() ?? '—'} {t('rows', 'baris')}
-          </span>
-          <div style={{ flex: 1 }} />
-          <a
-            href={`${BASE}/clean/download-xlsx/${cacheId}`}
-            target="_blank" rel="noreferrer"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: 'var(--kkm-blue)', border: '1px solid var(--kkm-blue)',
-              borderRadius: 'var(--radius-btn)', padding: '7px 14px',
-              fontSize: 13, fontWeight: 600, color: 'var(--text-on-navy)',
-            }}
-          >
-            <Download size={14} /> {t('Download XLSX', 'Muat Turun XLSX')}
-          </a>
-          <a
-            href={`${BASE}/clean/download-cached/${cacheId}?fmt=csv`}
-            target="_blank" rel="noreferrer"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
+        {/* ── Header (hidden in expanded mode to free vertical room) ───────── */}
+        {!expanded && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{
+              fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 'var(--radius-pill)',
               background: 'var(--surface-2)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-btn)', padding: '7px 14px',
-              fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
-            }}
-          >
-            <Download size={14} /> {t('Download CSV', 'Muat Turun CSV')}
-          </a>
-        </div>
-
-        {/* ── Edit hint ──────────────────────────────────────────────────── */}
-        <div id="explorer-edit-hint" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          {t(
-            'Double-click a cell — or focus it and press Enter — to edit. Enter saves, Esc cancels.',
-            'Klik dua kali sel — atau fokus dan tekan Enter — untuk menyunting. Enter simpan, Esc batal.',
-          )}
-        </div>
-
-        {/* ── Search + Flagged toggle ─────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', maxWidth: 320, flex: '1 1 200px' }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder={t('Search all rows…', 'Cari semua baris…')}
-              style={{
-                width: '100%', padding: '8px 12px 8px 32px',
-                background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-btn)', fontSize: 13, color: 'var(--text-primary)',
-              }}
-            />
-          </div>
-
-          {flaggedCount > 0 && (
-            <button
-              onClick={() => setShowFlaggedOnly(v => !v)}
-              aria-pressed={showFlaggedOnly}
+              color: 'var(--text-secondary)',
+            }}>
+              {filename}
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {effectiveTotal?.toLocaleString() ?? '—'} {t('rows', 'baris')}
+            </span>
+            <div style={{ flex: 1 }} />
+            <a
+              href={`${BASE}/clean/download-xlsx/${cacheId}`}
+              target="_blank" rel="noreferrer"
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
-                background: showFlaggedOnly ? 'var(--warning)' : 'var(--surface)',
-                border: `1px solid ${showFlaggedOnly ? 'var(--warning)' : 'var(--border)'}`,
+                background: 'var(--kkm-blue)', border: '1px solid var(--kkm-blue)',
                 borderRadius: 'var(--radius-btn)', padding: '7px 14px',
-                fontSize: 13, fontWeight: 600,
-                color: showFlaggedOnly ? 'var(--text-on-navy)' : 'var(--warning)',
-                cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                fontSize: 13, fontWeight: 600, color: 'var(--text-on-navy)',
               }}
             >
-              <AlertTriangle size={13} aria-hidden />
-              {showFlaggedOnly
-                ? t(`Flagged only (${flaggedCount})`, `Bermasalah sahaja (${flaggedCount})`)
-                : t(`Show flagged (${flaggedCount})`, `Tunjuk bermasalah (${flaggedCount})`)
-              }
-            </button>
-          )}
+              <Download size={14} /> {t('Download XLSX', 'Muat Turun XLSX')}
+            </a>
+            <a
+              href={`${BASE}/clean/download-cached/${cacheId}?fmt=csv`}
+              target="_blank" rel="noreferrer"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-btn)', padding: '7px 14px',
+                fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+              }}
+            >
+              <Download size={14} /> {t('Download CSV', 'Muat Turun CSV')}
+            </a>
+          </div>
+        )}
 
-          {filtered.length !== rows.length && (
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {filtered.length.toLocaleString()} {t('of', 'daripada')} {rows.length.toLocaleString()} {t('rows shown', 'baris ditunjuk')}
-            </span>
-          )}
-        </div>
-
-        {/* ── Truncation banner ──────────────────────────────────────────── */}
-        {isTruncated && (
+        {/* ── Truncation banner (hidden in expanded mode) ────────────────── */}
+        {!expanded && isTruncated && (
           <div
             role="alert"
             aria-live="polite"
@@ -325,109 +315,145 @@ export function ExplorerPage() {
           </div>
         )}
 
-        {/* ── Conditional-formatting legend ──────────────────────────────── */}
-        {columns.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              {t('Cell highlight', 'Sorotan sel')}:
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--danger-bg)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 11 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--danger)', display: 'inline-block', flexShrink: 0 }} aria-hidden />
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{t('Impossible value', 'Nilai mustahil')}</span>
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--warning-bg)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 11 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--warning)', display: 'inline-block', flexShrink: 0 }} aria-hidden />
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{t('Out of range / missing', 'Di luar julat / tiada nilai')}</span>
-            </span>
-          </div>
-        )}
-
-        {/* ── Column distribution ─────────────────────────────────────────── */}
-        {numericColumns.length > 0 && (
+        {/* ── Column distribution (collapsible; hidden in expanded mode) ──── */}
+        {!expanded && numericColumns.length > 0 && (
           <div style={{
             background: 'var(--surface)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)',
+            borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                {t('Column Distribution', 'Taburan Lajur')}
-              </span>
-              <select
-                value={activeHistCol}
-                onChange={e => setHistCol(e.target.value)}
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)' }}
-              >
-                {numericColumns.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <ColumnHistogram values={histValues} />
+            <button
+              onClick={() => setHistOpen(v => !v)}
+              aria-expanded={histOpen}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                padding: '12px 18px', background: 'transparent', border: 'none',
+                cursor: 'pointer', textAlign: 'left',
+                fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+              }}
+            >
+              {histOpen ? <ChevronDown size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
+              {t('Column Distribution', 'Taburan Lajur')}
+              {!histOpen && (
+                <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-muted)' }}>
+                  — {activeHistCol}
+                </span>
+              )}
+            </button>
+            {histOpen && (
+              <div style={{ padding: '0 20px 18px' }}>
+                <div style={{ marginBottom: 12 }}>
+                  <select
+                    value={activeHistCol}
+                    onChange={e => setHistCol(e.target.value)}
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)' }}
+                  >
+                    {numericColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <ColumnHistogram values={histValues} />
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── Table with virtual scroll. When fullscreen, the panel is rendered
-            through a portal to <body> so its position:fixed anchors to the real
-            viewport. Rendered inline, fixed positioning resolves against the
-            transformed .page-enter ancestor (a containing block), which shrinks
-            the overlay to the page content box — same trap FocusOverlay avoids. ── */}
-        {(() => {
-        const tablePanel = (
+        {/* ── Table panel. Stays in normal page flow in both modes; expanded just
+            grows the scroll window down to the viewport bottom (height measured in
+            the effect above), so the sidebar/top-bar remain visible. The unified
+            toolbar below carries search, flagged filter, the highlight legend and
+            the expand toggle so the controls travel with the data, not above it. ── */}
         <div style={{
           background: 'var(--surface)', border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden',
-          ...(fullscreen ? {
-            position: 'fixed', inset: 0, zIndex: 1000, borderRadius: 0,
-            display: 'flex', flexDirection: 'column',
-          } : {}),
+          borderRadius: expanded ? 0 : 'var(--radius-card)',
+          boxShadow: expanded ? 'none' : 'var(--shadow-card)', overflow: 'hidden',
         }}>
-          {/* ── Table toolbar (fullscreen toggle; search/flagged surfaced in overlay) ── */}
+          {/* ── Unified table toolbar (both modes) ───────────────────────── */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
             padding: '8px 12px', borderBottom: '1px solid var(--border)',
             background: 'var(--surface-2)', flexShrink: 0,
           }}>
-            {fullscreen && (
-              <>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{filename}</span>
-                <div style={{ position: 'relative', maxWidth: 280, flex: '1 1 180px' }}>
-                  <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                    placeholder={t('Search all rows…', 'Cari semua baris…')}
-                    style={{
-                      width: '100%', padding: '6px 10px 6px 30px',
-                      background: 'var(--surface)', border: '1px solid var(--border)',
-                      borderRadius: 'var(--radius-btn)', fontSize: 12.5, color: 'var(--text-primary)',
-                    }}
-                  />
-                </div>
-                {flaggedCount > 0 && (
-                  <button
-                    onClick={() => setShowFlaggedOnly(v => !v)}
-                    aria-pressed={showFlaggedOnly}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      background: showFlaggedOnly ? 'var(--warning)' : 'var(--surface)',
-                      border: `1px solid ${showFlaggedOnly ? 'var(--warning)' : 'var(--border)'}`,
-                      borderRadius: 'var(--radius-btn)', padding: '6px 12px',
-                      fontSize: 12.5, fontWeight: 600,
-                      color: showFlaggedOnly ? 'var(--text-on-navy)' : 'var(--warning)',
-                      cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                    }}
-                  >
-                    <AlertTriangle size={13} aria-hidden />
-                    {showFlaggedOnly
-                      ? t(`Flagged only (${flaggedCount})`, `Bermasalah sahaja (${flaggedCount})`)
-                      : t(`Show flagged (${flaggedCount})`, `Tunjuk bermasalah (${flaggedCount})`)}
-                  </button>
-                )}
-              </>
+            <div style={{ position: 'relative', maxWidth: 300, flex: '1 1 180px' }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder={t('Search all rows…', 'Cari semua baris…')}
+                style={{
+                  width: '100%', padding: '6px 10px 6px 30px',
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-btn)', fontSize: 12.5, color: 'var(--text-primary)',
+                }}
+              />
+            </div>
+
+            {flaggedCount > 0 && (
+              <button
+                onClick={() => setShowFlaggedOnly(v => !v)}
+                aria-pressed={showFlaggedOnly}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: showFlaggedOnly ? 'var(--warning)' : 'var(--surface)',
+                  border: `1px solid ${showFlaggedOnly ? 'var(--warning)' : 'var(--border)'}`,
+                  borderRadius: 'var(--radius-btn)', padding: '6px 12px',
+                  fontSize: 12.5, fontWeight: 600,
+                  color: showFlaggedOnly ? 'var(--text-on-navy)' : 'var(--warning)',
+                  cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                }}
+              >
+                <AlertTriangle size={13} aria-hidden />
+                {showFlaggedOnly
+                  ? t(`Flagged only (${flaggedCount})`, `Bermasalah sahaja (${flaggedCount})`)
+                  : t(`Show flagged (${flaggedCount})`, `Tunjuk bermasalah (${flaggedCount})`)}
+              </button>
             )}
+
+            {excludedCount > 0 && (
+              <button
+                onClick={() => setShowAnalyzableOnly(v => !v)}
+                aria-pressed={showAnalyzableOnly}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: showAnalyzableOnly ? 'var(--kkm-blue)' : 'var(--surface)',
+                  border: `1px solid ${showAnalyzableOnly ? 'var(--kkm-blue)' : 'var(--border)'}`,
+                  borderRadius: 'var(--radius-btn)', padding: '6px 12px',
+                  fontSize: 12.5, fontWeight: 600,
+                  color: showAnalyzableOnly ? 'var(--text-on-navy)' : 'var(--text-secondary)',
+                  cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                }}
+              >
+                {showAnalyzableOnly
+                  ? t(`Analyzable only (${rows.length - excludedCount})`, `Boleh analisis sahaja (${rows.length - excludedCount})`)
+                  : t(`Hide excluded (${excludedCount})`, `Sembunyikan dikecualikan (${excludedCount})`)}
+              </button>
+            )}
+
+            {filtered.length !== rows.length && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                {filtered.length.toLocaleString()} / {rows.length.toLocaleString()}
+              </span>
+            )}
+
             <div style={{ flex: 1 }} />
+
+            {/* Highlight legend — inline so the meaning of a coloured cell sits
+                next to the data instead of in a separate block above it. */}
+            {columns.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }} aria-hidden>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-secondary)' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--danger)', display: 'inline-block' }} />
+                  {t('Impossible', 'Mustahil')}
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-secondary)' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--warning)', display: 'inline-block' }} />
+                  {t('Out of range', 'Luar julat')}
+                </span>
+              </div>
+            )}
+
             <button
-              onClick={() => setFullscreen(v => !v)}
-              aria-pressed={fullscreen}
-              title={fullscreen ? t('Exit full screen (Esc)', 'Keluar skrin penuh (Esc)') : t('Full screen', 'Skrin penuh')}
+              onClick={() => setExpanded(v => !v)}
+              aria-pressed={expanded}
+              title={expanded ? t('Collapse (Esc)', 'Kuncupkan (Esc)') : t('Expand table', 'Kembangkan jadual')}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 background: 'var(--surface)', border: '1px solid var(--border)',
@@ -436,8 +462,8 @@ export function ExplorerPage() {
                 cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
               }}
             >
-              {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              {fullscreen ? t('Exit full screen', 'Keluar skrin penuh') : t('Full screen', 'Skrin penuh')}
+              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              {expanded ? t('Collapse', 'Kuncup') : t('Expand', 'Kembang')}
             </button>
           </div>
           {fetchError ? (
@@ -498,24 +524,27 @@ export function ExplorerPage() {
                     )}
 
                     {visibleRows.map((row) => {
-                      const rowId = row['_row_id'] as number;
+                      const rowId     = row['_row_id'] as number;
+                      const isExcluded = row['_exclude_label'] != null;
                       return (
                         <tr
                           key={rowId}
+                          title={isExcluded ? String(row['_exclude_label']) : undefined}
                           style={{
                             height: ROW_HEIGHT,
                             borderBottom: '1px solid var(--border)',
+                            opacity: isExcluded ? 0.45 : 1,
                           }}
                         >
                           {columns.map(c => {
                             const isEditing = editing?.rowId === rowId && editing?.col === c;
-                            const flag      = classifyCell(c, row[c]);
+                            const flag      = classifyCell(c, row[c], cellThresholds);
+                            const reason    = flag === 'ok' ? null : describeCell(c, row[c], cellThresholds);
                             const isNumeric = numericColumns.includes(c);
-                            const flagLabel = flag === 'danger'
-                              ? t('Impossible value', 'Nilai mustahil')
-                              : flag === 'warn'
-                                ? t('Out of range or missing', 'Di luar julat atau tiada nilai')
-                                : undefined;
+                            const flagLabel = reason ? t(reason.titleEN, reason.titleBM) : undefined;
+                            const showTip = (el: HTMLElement) => {
+                              if (reason && !isEditing) setCellTip({ reason, rect: el.getBoundingClientRect() });
+                            };
                             return (
                               <td
                                 key={c}
@@ -523,7 +552,12 @@ export function ExplorerPage() {
                                 tabIndex={!isEditing ? 0 : undefined}
                                 aria-describedby={!isEditing ? 'explorer-edit-hint' : undefined}
                                 aria-label={flagLabel ? `${c}: ${String(row[c] ?? '')} — ${flagLabel}` : undefined}
+                                onMouseEnter={e => showTip(e.currentTarget)}
+                                onMouseLeave={() => setCellTip(null)}
+                                onFocus={e => showTip(e.currentTarget)}
+                                onBlur={() => setCellTip(null)}
                                 onDoubleClick={() => {
+                                  setCellTip(null);
                                   setEditing({ rowId, col: c });
                                   setEditValue(row[c] == null ? '' : String(row[c]));
                                   setEditError('');
@@ -532,6 +566,7 @@ export function ExplorerPage() {
                                   if (isEditing) return;
                                   if (e.key === 'Enter' || e.key === 'F2') {
                                     e.preventDefault();
+                                    setCellTip(null);
                                     setEditing({ rowId, col: c });
                                     setEditValue(row[c] == null ? '' : String(row[c]));
                                     setEditError('');
@@ -602,25 +637,44 @@ export function ExplorerPage() {
                 </table>
               </div>
 
-              {/* Row count footer */}
+              {/* Footer — edit hint (keeps the #explorer-edit-hint target that
+                  cells reference via aria-describedby) + live row count. */}
               <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
                 padding: '6px 14px', borderTop: '1px solid var(--border)',
                 fontSize: 11, color: 'var(--text-muted)', background: 'var(--surface-2)',
               }}>
-                {filtered.length === rows.length
-                  ? t(`${rows.length.toLocaleString()} rows`, `${rows.length.toLocaleString()} baris`)
-                  : t(
-                    `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} rows`,
-                    `${filtered.length.toLocaleString()} daripada ${rows.length.toLocaleString()} baris`,
-                  )
-                }
+                <span id="explorer-edit-hint">
+                  {t(
+                    'Double-click a cell — or focus it and press Enter — to edit.',
+                    'Klik dua kali sel — atau fokus dan tekan Enter — untuk menyunting.',
+                  )}
+                </span>
+                <div style={{ flex: 1 }} />
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  {filtered.length === rows.length
+                    ? t(`${rows.length.toLocaleString()} rows`, `${rows.length.toLocaleString()} baris`)
+                    : t(
+                      `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} rows`,
+                      `${filtered.length.toLocaleString()} daripada ${rows.length.toLocaleString()} baris`,
+                    )
+                  }
+                </span>
               </div>
             </>
           )}
         </div>
-        );
-        return fullscreen ? createPortal(tablePanel, document.body) : tablePanel;
-        })()}
+
+        {/* Flag explanation tooltip — portaled to <body>, positioned from the
+            hovered/focused cell's rect. */}
+        {cellTip && (
+          <CellFlagTooltip
+            reason={cellTip.reason}
+            rect={cellTip.rect}
+            title={t(cellTip.reason.titleEN, cellTip.reason.titleBM)}
+            detail={t(cellTip.reason.detailEN, cellTip.reason.detailBM)}
+          />
+        )}
 
       </div>
     </SessionGuard>

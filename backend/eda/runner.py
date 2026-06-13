@@ -21,7 +21,7 @@ from ..utils.normaliser  import (
 )
 from ..utils.age import add_age_columns
 from ..utils.geo import add_geo_columns
-from .who_zscore    import add_who_zscores, zscore_mismatch_report
+from .who_zscore    import zscore_mismatch_report
 from .outliers      import detect_outliers, flag_outliers
 from .missing       import compute_missing_values, apply_null_strategy
 from .numerical     import compute_numerical_summary
@@ -30,7 +30,7 @@ from .bmi           import check_bmi_consistency
 from .indicators    import compute_indicators, compute_trajectory
 from .quality       import compute_quality_score
 from .completeness  import compute_data_completeness
-from .charts        import build_chart_blocks
+from .charts        import build_chart_blocks, normalize_for_charts
 
 
 # ─── JSON SAFE HELPER ─────────────────────────────────────────────────────────
@@ -638,7 +638,7 @@ def run_eda(df: pd.DataFrame, mapping: dict, source_type: str,
     report["bmi_consistency"] = check_bmi_consistency(df, threshold=bmi_threshold)
 
     # ── WHO z-scores (primary classification source) ───────────────────────────
-    df = add_who_zscores(df)
+    df = normalize_for_charts(df)
     report["zscore_mismatch"] = zscore_mismatch_report(df)
 
     # ── Analytical summaries ──────────────────────────────────────────────────
@@ -661,7 +661,7 @@ def run_eda(df: pd.DataFrame, mapping: dict, source_type: str,
         report["trajectory"] = compute_trajectory(df)
 
     # ── Chart blocks ──────────────────────────────────────────────────────────
-    report["charts"] = build_chart_blocks(df)
+    report["charts"] = build_chart_blocks(df, source_type=source_type)
 
     # ── Aggregated Tableau-ready flat table (NO ROW CAP) ──────────────────────
     from ..export.tableau import build_aggregated_table

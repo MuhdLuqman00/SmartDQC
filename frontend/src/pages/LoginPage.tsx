@@ -115,8 +115,8 @@ export function LoginPage() {
             fontFamily: 'var(--font-body)', fontWeight: 800, fontSize: 36,
             lineHeight: 1.2, marginBottom: 20,
           }}>
-            {t('Data Quality &', 'Kualiti Data &')}<br />
-            {t('Clinical Analytics', 'Analitik Klinikal')}
+            {t('Smart Data Quality', 'Kualiti Data')}<br />
+            {t('Check', 'Semakan Pintar')}
           </h1>
           <p style={{ fontSize: 14.5, lineHeight: 1.75, color: 'rgba(255,255,255,0.82)', maxWidth: 440, marginBottom: 28 }}>
             {t('Secure data validation, automated cleaning, and district-level nutrition reporting for the Ministry of Health Malaysia.',

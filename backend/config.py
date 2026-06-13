@@ -5,6 +5,8 @@
 
 import re
 
+from backend.clinical_ranges import get_range as _cr_get_range, get_val as _cr_get_val
+
 
 def _norm_key(s: str) -> str:
     """Collapse a header to alphanumerics only so separator style (space vs
@@ -55,38 +57,47 @@ CORE_FIELDS = [
 ]
 
 # ─── BIOLOGICAL PLAUSIBILITY RANGES ───────────────────────────────────────────
+# Sourced from clinical_ranges registry (Phase 2 rewire). Wide safety net for the
+# generic validity check — not the cohort cleaners. Change via Settings UI or
+# per-run overrides; see Docs/clinical_ranges_provenance.md §1 for rationale.
 
 BIO_RANGES = {
-    "berat_kg":           (0.5, 80.0),   # child 0–5 years
-    "tinggi_cm":          (30.0, 130.0),  # newborn to 5 years
-    "bmi":                (5.0,  40.0),
-    "age_months_computed": (0.0, 120.0),
+    "berat_kg":            _cr_get_range("bio_weight"),
+    "tinggi_cm":           _cr_get_range("bio_height"),
+    "bmi":                 _cr_get_range("bio_bmi"),
+    "age_months_computed": _cr_get_range("bio_age_months"),
 }
 
 # ─── BIRTH WEIGHT CLASSIFICATION (WHO standards) ──────────────────────────────
+# Sourced from clinical_ranges registry (Phase 2 rewire). See doc §8 for rationale.
+
+_BW_ELBW       = _cr_get_val("birth_weight_elbw")        # 1.0 kg
+_BW_VLBW       = _cr_get_val("birth_weight_vlbw")        # 1.5 kg
+_BW_LBW        = _cr_get_val("birth_weight_lbw")         # 2.5 kg
+_BW_NORMAL_MAX = _cr_get_val("birth_weight_normal_max")  # 4.0 kg
 
 BIRTH_WEIGHT_CATEGORIES = {
-    "extremely_low": (0.0, 1.0),      # <1.0 kg - Extremely Low Birth Weight (ELBW)
-    "very_low":      (1.0, 1.5),      # 1.0-1.499 kg - Very Low Birth Weight (VLBW)
-    "low":           (1.5, 2.5),      # 1.5-2.499 kg - Low Birth Weight (LBW)
-    "normal":        (2.5, 4.0),      # 2.5-3.999 kg - Normal
-    "macrosomia":    (4.0, 7.0),      # ≥4.0 kg - Macrosomia (high birth weight)
+    "extremely_low": (0.0,         _BW_ELBW),
+    "very_low":      (_BW_ELBW,    _BW_VLBW),
+    "low":           (_BW_VLBW,    _BW_LBW),
+    "normal":        (_BW_LBW,     _BW_NORMAL_MAX),
+    "macrosomia":    (_BW_NORMAL_MAX, 7.0),
 }
 
 def classify_birth_weight(weight_kg):
     """Classify birth weight according to WHO categories."""
     if weight_kg is None or weight_kg <= 0:
         return None
-    if weight_kg < 1.0:
-        return "Extremely Low (<1.0 kg)"
-    elif weight_kg < 1.5:
-        return "Very Low (1.0-1.5 kg)"
-    elif weight_kg < 2.5:
-        return "Low (1.5-2.5 kg)"  # LBW
-    elif weight_kg < 4.0:
-        return "Normal (2.5-4.0 kg)"
+    if weight_kg < _BW_ELBW:
+        return f"Extremely Low (<{_BW_ELBW} kg)"
+    elif weight_kg < _BW_VLBW:
+        return f"Very Low ({_BW_ELBW}-{_BW_VLBW} kg)"
+    elif weight_kg < _BW_LBW:
+        return f"Low ({_BW_VLBW}-{_BW_LBW} kg)"
+    elif weight_kg < _BW_NORMAL_MAX:
+        return f"Normal ({_BW_LBW}-{_BW_NORMAL_MAX} kg)"
     else:
-        return "Macrosomia (≥4.0 kg)"
+        return f"Macrosomia (≥{_BW_NORMAL_MAX} kg)"
 
 
 # ─── VALID VALUE SETS (spelling check only — NOT used for classification) ──────
@@ -233,6 +244,8 @@ AUTO_MAPPING_HINTS = {
                            "tarikh pengukuran", "tarikh ukur"],
         "tahun_ukur":     ["tahun ukur", "tahun pengukuran"],
         "sumber":         ["sumber", "agensi"],
+        "vaccine_name":   ["vaksin", "vaccine", "nama vaksin", "jenis vaksin",
+                           "jenis_vaksin", "vaccine_name"],
     },
     # NCDC (TASKA) currently uses the same year-prefixed wide TASKA layout as
     # MyVASS, so these hints mirror it. Kept as an independent set (not a shared
@@ -268,6 +281,8 @@ AUTO_MAPPING_HINTS = {
                            "tarikh pengukuran", "tarikh ukur"],
         "tahun_ukur":     ["tahun ukur", "tahun pengukuran"],
         "sumber":         ["sumber", "agensi"],
+        "vaccine_name":   ["vaksin", "vaccine", "nama vaksin", "jenis vaksin",
+                           "jenis_vaksin", "vaccine_name"],
     },
     # KPM (school-age) — distinct student/school schema. Note WHO infant
     # z-scores don't apply; the KPM cleaner uses school-age BMI categories.
@@ -342,6 +357,89 @@ def detect_source_type(columns: list) -> str:
         return "myvass"
 
     return "general"
+
+
+# Per-schema named signals used by score_source_types.
+# Each entry is a list of raw signal strings that are normalised with _norm_key
+# before matching, so separator style (space/underscore/dot) never blocks a hit.
+_SCHEMA_SIGNALS: dict[str, list[str]] = {
+    "kpm": [
+        "id murid", "nama sekolah", "sekolah", "thn ting", "ting murid",
+        "nama murid", "nama pelajar",
+    ],
+    "myvass": [
+        # MyVAS vaccination-registry (real export) signals
+        "ic no passport", "dose date", "facility name",
+        "age at vaccination", "kategori fasiliti",
+        # TASKA wide-format signals (also routes to myvass)
+        "nama taska", "no mykid", "pendapatan keluarga", "kumpulan umur",
+        "2024 berat", "2025 berat", "2026 berat", "2023 status berat",
+    ],
+    "ncdc": [
+        "nama taska", "no mykid", "pendapatan keluarga", "kumpulan umur",
+        "2024 berat", "2025 berat", "2026 berat", "2023 status berat",
+        "agensi",
+    ],
+}
+
+
+def score_source_types(df: "pd.DataFrame") -> list[dict]:
+    """Return per-schema evidence scores for a DataFrame's columns.
+
+    Unlike detect_source_type (hard one-winner classifier), this function
+    returns a ranked list for ALL known schemas so callers can surface soft
+    evidence to the user without auto-applying a schema choice.
+
+    Each item: {type, confidence, matched_count, total_signals,
+                signals:[{name, matched, evidence, count}]}
+
+    confidence: fraction of schema signals matched (0.0–1.0).
+    The list is sorted by confidence descending.
+    """
+    import pandas as _pd
+
+    cols: list[str] = list(df.columns) if isinstance(df, _pd.DataFrame) else list(df)
+    # Build a normalised key → raw column name index (same as auto_suggest_mapping)
+    norm_index: dict[str, str] = {}
+    for c in cols:
+        norm_index.setdefault(_norm_key(c), c)
+
+    def _match(signal: str) -> tuple[bool, str]:
+        """Return (matched, evidence_label)."""
+        key = _norm_key(signal)
+        if key in norm_index:
+            return True, f"column '{norm_index[key]}'"
+        # Partial substring match as fallback (signal contained in a column)
+        for nk, raw in norm_index.items():
+            if key in nk:
+                return True, f"column '{raw}' (partial)"
+        return False, ""
+
+    results: list[dict] = []
+    for schema, signals in _SCHEMA_SIGNALS.items():
+        signal_results: list[dict] = []
+        matched_count = 0
+        for sig in signals:
+            matched, evidence = _match(sig)
+            signal_results.append({
+                "name": sig,
+                "matched": matched,
+                "evidence": evidence,
+                "count": 1 if matched else 0,
+            })
+            if matched:
+                matched_count += 1
+        confidence = round(matched_count / len(signals), 3) if signals else 0.0
+        results.append({
+            "type": schema,
+            "confidence": confidence,
+            "matched_count": matched_count,
+            "total_signals": len(signals),
+            "signals": signal_results,
+        })
+
+    results.sort(key=lambda x: x["confidence"], reverse=True)
+    return results
 
 
 def auto_suggest_mapping(columns: list, source_type: str) -> dict:

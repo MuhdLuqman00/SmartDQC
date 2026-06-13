@@ -372,14 +372,17 @@ def compute_trajectory_narratives(
             return None
     _years = [y for y in (_yr(p) for p in df["period"]) if y is not None]
     last_year = max(_years) if _years else int(pd.Timestamp.now().year)
+    # Honour a target at or beyond the latest data year exactly (so an explicit
+    # 2027 setting is NOT bumped to 2028 when the dataset itself contains 2027
+    # records). A target strictly in the PAST is nonsensical for a forecast, so
+    # project forward one year (last_year + 1) rather than back-casting to the
+    # last data year.
     if target_year is None:
         effective_year = last_year + _FORECAST_PERIODS
+    elif int(target_year) >= last_year:
+        effective_year = int(target_year)
     else:
-        # Honour the admin-configured year exactly. Only guard against
-        # projecting before the latest data year — NOT last_year+1, which
-        # would incorrectly bump an explicit 2027 setting to 2028 when the
-        # dataset itself contains 2027 records.
-        effective_year = max(int(target_year), last_year)
+        effective_year = last_year + 1
 
     kpi_rate_cols = {
         "stunting_rate":    "stunting_rate",

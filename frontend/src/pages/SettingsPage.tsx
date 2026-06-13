@@ -65,6 +65,34 @@ const KPI_LABELS: { key: string; en: string; bm: string }[] = [
    Empty input → parseFloat('') → NaN → invalid (flagged, save blocked). */
 const isValidTarget = (v: number) => Number.isFinite(v) && v >= 0 && v <= 100;
 
+interface ClinicalEntry {
+  tier: string; unit: string; group: string;
+  label_en: string; label_bm: string;
+  recommended: string; why: string; source: string;
+  editable: boolean;
+  type: 'range' | 'value';
+  default_min?: number; default_max?: number;
+  effective_min?: number; effective_max?: number;
+  default_value?: number; effective_value?: number;
+  overridden: boolean;
+}
+
+/* Tier badge palette — DOM (operational, KKM house rules), WHO (international
+   standard), PROXY (legacy approximation), GEO (geographic bound). */
+const CLINICAL_TIER_STYLE: Record<string, React.CSSProperties> = {
+  WHO:   { background: 'var(--success-bg)',            color: 'var(--success)' },
+  DOM:   { background: 'rgba(0,51,102,0.08)',          color: 'var(--navy)' },
+  PROXY: { background: 'rgba(217,119,6,0.1)',          color: '#d97706' },
+  GEO:   { background: 'var(--surface-alt, #f4f4f4)', color: 'var(--text-muted)' },
+};
+
+const clinicalRefValue = (entry: ClinicalEntry): string =>
+  entry.type === 'range'
+    ? `${entry.effective_min} – ${entry.effective_max}`
+    : `${entry.effective_value}`;
+type ClinicalRanges = Record<string, ClinicalEntry>;
+type ClinicalLocal = Record<string, { min?: number; max?: number; value?: number }>;
+
 const SOURCE_LABELS: Record<string, { en: string; bm: string }> = {
   npan_2021_2025: { en: 'NPAN 2021–2025 (official)', bm: 'NPAN 2021–2025 (rasmi)' },
   who_2025:       { en: 'WHO Global Targets 2025 (official)', bm: 'Sasaran Global WHO 2025 (rasmi)' },
@@ -75,7 +103,7 @@ export function SettingsPage() {
   const { t } = useLang();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const [tab, setTab] = useState<'thresholds' | 'rules' | 'kpi'>('thresholds');
+  const [tab, setTab] = useState<'thresholds' | 'rules' | 'kpi' | 'ranges'>('thresholds');
   const [thresholds, setThresholds] = useState<Thresholds>(DEFAULT_THRESHOLDS);
   const [rules, setRules] = useState<Rule[]>([]);
   const [ruleSchema, setRuleSchema] = useState<RuleSchema>('myvass');
@@ -84,6 +112,12 @@ export function SettingsPage() {
   const [kpi, setKpi] = useState<KpiTargets | null>(null);
   const [kpiSaving, setKpiSaving] = useState(false);
   const [kpiSaved, setKpiSaved] = useState(false);
+  const [clinicalRanges, setClinicalRanges] = useState<ClinicalRanges | null>(null);
+  const [clinicalLocal, setClinicalLocal] = useState<ClinicalLocal>({});
+  const [clinicalSaving, setClinicalSaving] = useState(false);
+  const [clinicalSaved, setClinicalSaved] = useState(false);
+  const [clinicalErrors, setClinicalErrors] = useState<string[]>([]);
+  const [openClinicalHelp, setOpenClinicalHelp] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Thresholds>('/settings/thresholds').then(r => setThresholds(r.data)).catch(console.error);
@@ -92,6 +126,18 @@ export function SettingsPage() {
       /* Backend (B3) returns { rules: [{ code, en, bm, desc_en, desc_bm,
          locked, enabled }] } — the real cleaner rules, shared with the pipeline. */
       setRules(Array.isArray(r.data?.rules) ? r.data.rules : []);
+    }).catch(console.error);
+    api.get<ClinicalRanges>('/config/clinical-ranges').then(r => {
+      setClinicalRanges(r.data);
+      const init: ClinicalLocal = {};
+      for (const [key, entry] of Object.entries(r.data)) {
+        if (entry.type === 'range') {
+          init[key] = { min: entry.effective_min, max: entry.effective_max };
+        } else {
+          init[key] = { value: entry.effective_value };
+        }
+      }
+      setClinicalLocal(init);
     }).catch(console.error);
   }, []);
 
@@ -105,6 +151,71 @@ export function SettingsPage() {
 
   const restoreDefaults = () => {
     setThresholds(DEFAULT_THRESHOLDS);
+  };
+
+  const saveClinicalRanges = async () => {
+    if (!clinicalRanges) return;
+    const overrides: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(clinicalRanges)) {
+      if (!entry.editable) continue;  // read-only reference keys are never sent
+      const local = clinicalLocal[key];
+      if (!local) continue;
+      if (entry.type === 'range') {
+        const minChanged = Number.isFinite(local.min) && local.min !== entry.default_min;
+        const maxChanged = Number.isFinite(local.max) && local.max !== entry.default_max;
+        if (minChanged || maxChanged) {
+          overrides[key] = {
+            min: Number.isFinite(local.min) ? local.min : entry.default_min,
+            max: Number.isFinite(local.max) ? local.max : entry.default_max,
+          };
+        }
+      } else {
+        if (Number.isFinite(local.value) && local.value !== entry.default_value) {
+          overrides[key] = { value: local.value };
+        }
+      }
+    }
+    setClinicalSaving(true);
+    try {
+      await api.put('/config/clinical-ranges', overrides);
+      setClinicalSaved(true);
+      setTimeout(() => setClinicalSaved(false), 2000);
+      setClinicalErrors([]);
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      setClinicalErrors(
+        Array.isArray(detail?.errors) ? detail.errors :
+        Array.isArray(detail) ? [String(detail)] : ['Save failed']
+      );
+    } finally {
+      setClinicalSaving(false);
+    }
+  };
+
+  const resetClinicalKey = (key: string) => {
+    const entry = clinicalRanges?.[key];
+    if (!entry) return;
+    setClinicalLocal(prev => ({
+      ...prev,
+      [key]: entry.type === 'range'
+        ? { min: entry.default_min, max: entry.default_max }
+        : { value: entry.default_value },
+    }));
+  };
+
+  const resetClinicalAll = async () => {
+    try {
+      const r = await api.put<ClinicalRanges>('/config/clinical-ranges', {});
+      setClinicalRanges(r.data);
+      const init: ClinicalLocal = {};
+      for (const [key, entry] of Object.entries(r.data)) {
+        init[key] = entry.type === 'range'
+          ? { min: entry.effective_min, max: entry.effective_max }
+          : { value: entry.effective_value };
+      }
+      setClinicalLocal(init);
+      setClinicalErrors([]);
+    } catch (e) { console.error(e); }
   };
 
   const setKpiValue = (grp: 'npan' | 'who', key: string, value: number) => {
@@ -232,6 +343,7 @@ export function SettingsPage() {
         {([
           ['thresholds', t('Thresholds', 'Ambang')],
           ['rules', t('Cleaning Rules', 'Peraturan Pembersihan')],
+          ['ranges', t('Clinical Ranges', 'Julat Klinikal')],
           ...(isAdmin ? [['kpi', t('KPI Targets', 'Sasaran KPI')] as const] : []),
         ] as const).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id as typeof tab)}
@@ -537,6 +649,205 @@ export function SettingsPage() {
             </div>
           </div>
         )
+      )}
+      {/* Clinical Ranges tab */}
+      {tab === 'ranges' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {clinicalRanges === null ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{t('Loading…', 'Memuatkan…')}</div>
+          ) : (
+            <>
+              {/* ── Section 1: adjustable operational bounds (editable) ── */}
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  {t('Adjustable operational bounds', 'Had operasi boleh laras')}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  {t(
+                    'KKM operational thresholds. Edits take effect on new cleaning runs.',
+                    'Ambang operasi KKM. Suntingan terpakai pada larian pembersihan baharu.',
+                  )}
+                </div>
+              </div>
+              {Object.entries(
+                Object.entries(clinicalRanges)
+                  .filter(([, entry]) => entry.editable)
+                  .reduce<Record<string, [string, ClinicalEntry][]>>(
+                    (acc, [key, entry]) => {
+                      (acc[entry.group] ??= []).push([key, entry]);
+                      return acc;
+                    }, {}
+                  )
+              ).map(([group, entries]) => (
+                <div key={group} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: 24, boxShadow: 'var(--shadow-card)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 16 }}>
+                    {group.replace(/_/g, ' ')}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {entries.map(([key, entry]) => {
+                      const local = clinicalLocal[key] ?? {};
+                      const isHelpOpen = openClinicalHelp === key;
+                      const isModified = entry.type === 'range'
+                        ? (local.min !== entry.default_min || local.max !== entry.default_max)
+                        : (local.value !== entry.default_value);
+                      return (
+                        <div key={key}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 1, minWidth: 0 }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', borderRadius: 999, padding: '2px 7px', flexShrink: 0, ...(CLINICAL_TIER_STYLE[entry.tier] ?? CLINICAL_TIER_STYLE.GEO) }}>
+                                {entry.tier}
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {t(entry.label_en, entry.label_bm)}
+                                {entry.unit && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>({entry.unit})</span>}
+                              </span>
+                              <button type="button" onClick={() => setOpenClinicalHelp(isHelpOpen ? null : key)} aria-label="Info"
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: isHelpOpen ? 'var(--kkm-blue)' : 'var(--text-muted)', display: 'inline-flex', flexShrink: 0 }}>
+                                <Info size={12} />
+                              </button>
+                              {isModified && (
+                                <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(217,119,6,0.1)', color: '#d97706', borderRadius: 999, padding: '2px 7px', flexShrink: 0 }}>
+                                  {t('Modified', 'Diubah')}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                              {entry.type === 'range' ? (
+                                <>
+                                  <input type="number"
+                                    value={Number.isFinite(local.min) ? local.min : ''}
+                                    onChange={e => setClinicalLocal(prev => ({ ...prev, [key]: { ...prev[key], min: parseFloat(e.target.value) } }))}
+                                    style={{ width: 68, textAlign: 'right', padding: '5px 7px', fontSize: 12, fontFamily: 'var(--font-mono)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--navy)' }} />
+                                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>–</span>
+                                  <input type="number"
+                                    value={Number.isFinite(local.max) ? local.max : ''}
+                                    onChange={e => setClinicalLocal(prev => ({ ...prev, [key]: { ...prev[key], max: parseFloat(e.target.value) } }))}
+                                    style={{ width: 68, textAlign: 'right', padding: '5px 7px', fontSize: 12, fontFamily: 'var(--font-mono)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--navy)' }} />
+                                </>
+                              ) : (
+                                <input type="number"
+                                  value={Number.isFinite(local.value) ? local.value : ''}
+                                  onChange={e => setClinicalLocal(prev => ({ ...prev, [key]: { value: parseFloat(e.target.value) } }))}
+                                  style={{ width: 90, textAlign: 'right', padding: '5px 7px', fontSize: 12, fontFamily: 'var(--font-mono)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--navy)' }} />
+                              )}
+                              {isModified && (
+                                <button type="button" onClick={() => resetClinicalKey(key)} title={t('Reset to default', 'Set semula ke lalai')}
+                                  style={{ background: 'none', border: 'none', padding: 3, cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex' }}>
+                                  <RotateCcw size={11} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {isHelpOpen && (
+                            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5, background: 'var(--surface-alt, #f8f8f8)', borderRadius: 6, padding: '8px 12px' }}>
+                              <div>{entry.why}</div>
+                              <div style={{ marginTop: 4, color: 'var(--text-muted)' }}>
+                                {t('Recommended:', 'Disyorkan:')} <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{entry.recommended}</span>
+                                {' · '}{t('Source:', 'Sumber:')} {entry.source}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {/* ── Section 2: clinical reference standards (read-only) ── */}
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  {t('Clinical reference standards', 'Piawai rujukan klinikal')}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  {t(
+                    'WHO standards, geographic limits and legacy proxies — shown with their source for transparency and fixed to keep reporting comparable.',
+                    'Piawai WHO, had geografi dan proksi warisan — dipaparkan dengan sumbernya untuk ketelusan dan ditetapkan agar pelaporan kekal setara.',
+                  )}
+                </div>
+              </div>
+              {Object.entries(
+                Object.entries(clinicalRanges)
+                  .filter(([, entry]) => !entry.editable)
+                  .reduce<Record<string, [string, ClinicalEntry][]>>(
+                    (acc, [key, entry]) => {
+                      (acc[entry.group] ??= []).push([key, entry]);
+                      return acc;
+                    }, {}
+                  )
+              ).map(([group, entries]) => (
+                <div key={group} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: 24, boxShadow: 'var(--shadow-card)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 16 }}>
+                    {group.replace(/_/g, ' ')}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {entries.map(([key, entry]) => {
+                      const isHelpOpen = openClinicalHelp === key;
+                      return (
+                        <div key={key}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 1, minWidth: 0 }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', borderRadius: 999, padding: '2px 7px', flexShrink: 0, ...(CLINICAL_TIER_STYLE[entry.tier] ?? CLINICAL_TIER_STYLE.GEO) }}>
+                                {entry.tier}
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {t(entry.label_en, entry.label_bm)}
+                                {entry.unit && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>({entry.unit})</span>}
+                              </span>
+                              <button type="button" onClick={() => setOpenClinicalHelp(isHelpOpen ? null : key)} aria-label="Info"
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: isHelpOpen ? 'var(--kkm-blue)' : 'var(--text-muted)', display: 'inline-flex', flexShrink: 0 }}>
+                                <Info size={12} />
+                              </button>
+                            </div>
+                            {/* Read-only value — reference standard, no input */}
+                            <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0 }}>
+                              {clinicalRefValue(entry)}
+                            </span>
+                          </div>
+                          {isHelpOpen && (
+                            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5, background: 'var(--surface-alt, #f8f8f8)', borderRadius: 6, padding: '8px 12px' }}>
+                              <div>{entry.why}</div>
+                              <div style={{ marginTop: 4, color: 'var(--text-muted)' }}>
+                                {t('Recommended:', 'Disyorkan:')} <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{entry.recommended}</span>
+                                {' · '}{t('Source:', 'Sumber:')} {entry.source}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              <div>
+                {clinicalErrors.length > 0 && (
+                  <div role="alert" style={{ fontSize: 11, color: 'var(--danger)', marginBottom: 10 }}>
+                    {clinicalErrors.join(' · ')}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <button onClick={saveClinicalRanges} disabled={clinicalSaving}
+                    style={{ background: clinicalSaved ? 'var(--success)' : 'var(--kkm-blue)', color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)', padding: '10px 22px', fontWeight: 600, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Save size={15} />
+                    {clinicalSaving ? t('Saving…', 'Menyimpan…') : clinicalSaved ? t('Saved!', 'Disimpan!') : t('Save ranges', 'Simpan julat')}
+                  </button>
+                  <button onClick={resetClinicalAll} type="button"
+                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <RotateCcw size={12} />
+                    {t('Reset all to defaults', 'Set semula semua ke lalai')}
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.5 }}>
+                  {t(
+                    'Operational bounds apply to new cleaning runs immediately. Reference standards are shown with their source for transparency and are fixed.',
+                    'Had operasi terpakai pada larian pembersihan baharu serta-merta. Piawai rujukan dipaparkan dengan sumbernya untuk ketelusan dan ditetapkan.',
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );
