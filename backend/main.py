@@ -1185,6 +1185,7 @@ from .eda.cleaning import (
     REVIEW_EVALUATED_RULES,
     review_rules_for_source,
     _REVIEW_MANAGED_SENTINEL,
+    recommend_drop_rules,
 )
 
 # ── Cleaned-DataFrame cache: in-memory hot tier + durable disk tier ──────────
@@ -1948,6 +1949,10 @@ async def detect_type_endpoint(
                 "rationale_bm": rationale_bm,
             })
 
+        # 5C: per-rule portable recommendations — run trigger_fns against the raw
+        # frame and surface any schema-specific rules that would fire with count > 0.
+        recommendations.extend(recommend_drop_rules(df))
+
     return JSONResponse(
         content=json_safe(
             {
@@ -2188,7 +2193,7 @@ async def clean_run_endpoint(
     _raw_body_rules = (
         set(body.enabled_rules) if (body and body.enabled_rules is not None) else None
     )
-    enabled = _effective_enabled_rules(_raw_body_rules, db)
+    enabled = _effective_enabled_rules(_raw_body_rules, db, effective_type)
     # Best-effort, like _effective_enabled_rules above: a DB outage must NOT break
     # the clean run (cleaning is in-memory; persistence below is already non-fatal).
     # On failure fall back to registry defaults rather than 500 before cleaning.
@@ -5509,7 +5514,7 @@ def _load_review_rule_state(db) -> dict:
     return state
 
 
-def _effective_enabled_rules(raw_body_rules, db):
+def _effective_enabled_rules(raw_body_rules, db, data_type: str = "general"):
     """Build the effective enabled-rules set passed to the cleaner for a run (D2).
 
     = (drop selection from the request, or the persisted drop state if the request
@@ -5535,6 +5540,17 @@ def _effective_enabled_rules(raw_body_rules, db):
             base = {c for c, en in _load_rule_state(db).items() if en}
         except Exception:
             base = set()
+        # Scope the global all-on default to the running source's OWN schema. The
+        # persisted Settings state defaults EVERY RULE_REGISTRY drop code on, but a
+        # rule only belongs to the schemas listed in EVALUATED_RULES — so without
+        # this an infant-only rule like dropped_age_over5 would leak into a general
+        # (school-age) run and wipe the dataset (the documented drop-all failure).
+        # Deliberate per-run approvals arrive via raw_body_rules (honored verbatim
+        # above), never through this fallback, so the recommend_drop_rules opt-in is
+        # unaffected. Locked rules run regardless via _rule_on, so scoping them out
+        # of the explicit set is harmless.
+        _applicable = set(EVALUATED_RULES.get(data_type, EVALUATED_RULES["general"]))
+        base = {c for c in base if c in _applicable}
     if not review_managed:
         return base  # reviews unmanaged -> cleaner leaves them all ON by default
     # Reviews managed: the resolved review selection (every active rule default-on,

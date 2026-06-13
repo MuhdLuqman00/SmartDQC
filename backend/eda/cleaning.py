@@ -219,6 +219,145 @@ def _apply_bmi_outlier(df, stats, on, bmi_max=BMI_MAX) -> None:
         stats["dropped_bmi_outlier"] = 0
 
 
+# ── Schema-specific portable drop-rule helpers (Phase 5C) ─────────────────────
+# Each _apply_* encapsulates the inline rule logic from clean_myvass/ncdc/kpm.
+# Call sites stay at the SAME pipeline stage — pure relocation, no logic change.
+# Each _trigger_* is a predicate over a PREPARED frame (canonical columns already
+# present) for the recommend endpoint (Phase 5C step 4).
+
+def _apply_dropped_date_before_dob(df, stats, _on, *, date_col: str) -> None:
+    bad_date = (
+        df["Tarikh_Lahir"].notna()
+        & df[date_col].notna()
+        & (df[date_col] < df["Tarikh_Lahir"])
+    )
+    if _on("dropped_date_before_dob"):
+        stats["dropped_date_before_dob"] = int((bad_date & df["analyzable"]).sum())
+        _exclude(df, bad_date, "dropped_date_before_dob")
+    else:
+        stats["dropped_date_before_dob"] = 0
+
+
+def _trigger_date_before_dob(df: pd.DataFrame, *, date_col: str = "Tarikh_Ukur") -> pd.Series:
+    if "Tarikh_Lahir" not in df.columns or date_col not in df.columns:
+        return pd.Series(False, index=df.index)
+    return (
+        df["Tarikh_Lahir"].notna()
+        & df[date_col].notna()
+        & (df[date_col] < df["Tarikh_Lahir"])
+    )
+
+
+def _apply_dropped_age_over5(df, stats, _on, *, age_cap: float) -> None:
+    age_invalid = df["Age_Months"].notna() & (df["Age_Months"] >= age_cap)
+    if _on("dropped_age_over5"):
+        stats["dropped_age_over5"] = int((age_invalid & df["analyzable"]).sum())
+        _exclude(df, age_invalid, "dropped_age_over5")
+    else:
+        stats["dropped_age_over5"] = 0
+
+
+def _trigger_age_over5(df: pd.DataFrame, *, age_cap: float = 60.0) -> pd.Series:
+    if "Age_Months" not in df.columns:
+        return pd.Series(False, index=df.index)
+    return df["Age_Months"].notna() & (df["Age_Months"] >= age_cap)
+
+
+def _apply_dropped_pendapatan_x(df, stats, _on, *, income_col: str) -> None:
+    pendapatan_x = df[income_col].astype(str).str.upper().str.strip() == "X"
+    if _on("dropped_pendapatan_x"):
+        stats["dropped_pendapatan_x"] = int((pendapatan_x & df["analyzable"]).sum())
+        _exclude(df, pendapatan_x, "dropped_pendapatan_x")
+    else:
+        stats["dropped_pendapatan_x"] = 0
+
+
+def _trigger_pendapatan_x(df: pd.DataFrame) -> pd.Series:
+    for col in df.columns:
+        if "pendapatan" in col.lower() or "income" in col.lower():
+            return df[col].astype(str).str.upper().str.strip() == "X"
+    return pd.Series(False, index=df.index)
+
+
+def _apply_dropped_null_dob(df, stats, _on) -> None:
+    _mask = df["Tarikh_Lahir"].isna()
+    if _on("dropped_null_dob"):
+        stats["dropped_null_dob"] = int((_mask & df["analyzable"]).sum())
+        _exclude(df, _mask, "dropped_null_dob")
+    else:
+        stats["dropped_null_dob"] = 0
+
+
+def _trigger_null_dob(df: pd.DataFrame) -> pd.Series:
+    if "Tarikh_Lahir" not in df.columns:
+        return pd.Series(False, index=df.index)
+    return df["Tarikh_Lahir"].isna()
+
+
+def _apply_dropped_duplicate_mykid(
+    df, stats, _on, enabled_rules, *, mykid_col: str,
+    sort_date_col: str = "Tarikh_Pengukuran"
+) -> None:
+    _placeholder = pd.Series(False, index=df.index)
+    _dropdup = pd.Series(False, index=df.index)
+    for _key, _grp in df.groupby(mykid_col):
+        if len(_grp) < 2:
+            continue
+        if _grp["Tarikh_Lahir"].nunique(dropna=True) > 1:
+            _placeholder.loc[_grp.index] = True
+        else:
+            _order = _grp.sort_values(sort_date_col, ascending=False)
+            _dropdup.loc[_order.index[1:]] = True
+    if _on("dropped_duplicate_mykid"):
+        stats["dropped_duplicate_mykid"] = int((_dropdup & df["analyzable"]).sum())
+        _exclude(df, _dropdup, "dropped_duplicate_mykid")
+    else:
+        stats["dropped_duplicate_mykid"] = 0
+    if _review_rule_on("review_mykid_shared_placeholder", enabled_rules):
+        _flag(df, _placeholder, "review_mykid_shared_placeholder")
+
+
+def _trigger_duplicate_mykid(df: pd.DataFrame) -> pd.Series:
+    mykid_col = next(
+        (c for c in df.columns
+         if "mykid" in c.lower().replace(" ", "").replace(".", "")),
+        None,
+    )
+    if not mykid_col or "Tarikh_Lahir" not in df.columns:
+        return pd.Series(False, index=df.index)
+    date_col = next(
+        (c for c in ("Tarikh_Pengukuran", "Tarikh_Ukur") if c in df.columns), None
+    )
+    if not date_col:
+        return pd.Series(False, index=df.index)
+    result = pd.Series(False, index=df.index)
+    for _key, _grp in df.groupby(mykid_col):
+        if len(_grp) < 2:
+            continue
+        if _grp["Tarikh_Lahir"].nunique(dropna=True) <= 1:
+            _order = _grp.sort_values(date_col, ascending=False)
+            result.loc[_order.index[1:]] = True
+    return result
+
+
+def _apply_dropped_ragu_gender(df, stats, _on) -> None:
+    """Assumes Jantina_Raw is already set on df."""
+    _mask = df["Jantina_Raw"] == "RAGU"
+    if _on("dropped_ragu_gender"):
+        stats["dropped_ragu_gender"] = int((_mask & df["analyzable"]).sum())
+        _exclude(df, _mask, "dropped_ragu_gender")
+    else:
+        stats["dropped_ragu_gender"] = 0
+
+
+def _trigger_ragu_gender(df: pd.DataFrame) -> pd.Series:
+    for col in df.columns:
+        nc = col.lower()
+        if "jantina" in nc or "gender" in nc or nc == "sex":
+            return df[col].astype(str).str.upper().str.strip() == "RAGU"
+    return pd.Series(False, index=df.index)
+
+
 def _set_kategori_umur(df: pd.DataFrame) -> None:
     """Bilingual age band column derived from Age_Days."""
     if "Age_Days" in df.columns:
@@ -731,14 +870,7 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | N
         df["Tarikh_Ukur"] = pd.NaT
 
     # Rule 4: Flag where measurement < DOB
-    bad_date = (df["Tarikh_Lahir"].notna() &
-                df["Tarikh_Ukur"].notna() &
-                (df["Tarikh_Ukur"] < df["Tarikh_Lahir"]))
-    if _on("dropped_date_before_dob"):
-        stats["dropped_date_before_dob"] = int((bad_date & df["analyzable"]).sum())
-        _exclude(df, bad_date, "dropped_date_before_dob")
-    else:
-        stats["dropped_date_before_dob"] = 0
+    _apply_dropped_date_before_dob(df, stats, _on, date_col="Tarikh_Ukur")
 
     # Compute age in days
     has_both_dates = df["Tarikh_Lahir"].notna() & df["Tarikh_Ukur"].notna()
@@ -750,12 +882,7 @@ def clean_myvass(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | N
     df["Age_Months"] = (df["Age_Days"] / 30.4375).round(2)
 
     # Rule 3: Flag age >= 60 months
-    age_invalid = df["Age_Months"].notna() & (df["Age_Months"] >= _age_cap)
-    if _on("dropped_age_over5"):
-        stats["dropped_age_over5"] = int((age_invalid & df["analyzable"]).sum())
-        _exclude(df, age_invalid, "dropped_age_over5")
-    else:
-        stats["dropped_age_over5"] = 0
+    _apply_dropped_age_over5(df, stats, _on, age_cap=_age_cap)
 
     # Convert measurements to numeric
     if weight_col:
@@ -917,12 +1044,7 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | Non
 
     # Rule 9: Exclude Pendapatan = 'X'
     if income_col:
-        pendapatan_x = df[income_col].astype(str).str.upper().str.strip() == "X"
-        if _on("dropped_pendapatan_x"):
-            stats["dropped_pendapatan_x"] = int((pendapatan_x & df["analyzable"]).sum())
-            _exclude(df, pendapatan_x, "dropped_pendapatan_x")
-        else:
-            stats["dropped_pendapatan_x"] = 0
+        _apply_dropped_pendapatan_x(df, stats, _on, income_col=income_col)
     else:
         stats["dropped_pendapatan_x"] = 0
 
@@ -938,22 +1060,10 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | Non
         df["Tarikh_Pengukuran"] = pd.NaT
 
     # Flag null DOB
-    if _on("dropped_null_dob"):
-        _mask = df["Tarikh_Lahir"].isna()
-        stats["dropped_null_dob"] = int((_mask & df["analyzable"]).sum())
-        _exclude(df, _mask, "dropped_null_dob")
-    else:
-        stats["dropped_null_dob"] = 0
+    _apply_dropped_null_dob(df, stats, _on)
 
     # Rule 4: Flag where measurement < DOB
-    bad_date = (df["Tarikh_Lahir"].notna() &
-                df["Tarikh_Pengukuran"].notna() &
-                (df["Tarikh_Pengukuran"] < df["Tarikh_Lahir"]))
-    if _on("dropped_date_before_dob"):
-        stats["dropped_date_before_dob"] = int((bad_date & df["analyzable"]).sum())
-        _exclude(df, bad_date, "dropped_date_before_dob")
-    else:
-        stats["dropped_date_before_dob"] = 0
+    _apply_dropped_date_before_dob(df, stats, _on, date_col="Tarikh_Pengukuran")
 
     # Compute age
     has_both = df["Tarikh_Lahir"].notna() & df["Tarikh_Pengukuran"].notna()
@@ -988,23 +1098,7 @@ def clean_ncdc(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | Non
     # drop none (review_mykid_shared_placeholder). Prevents wrongly dropping
     # placeholder rows (e.g. 12/13 rows sharing one stand-in MyKid).
     if mykid_col and "Tarikh_Pengukuran" in df.columns:
-        _placeholder = pd.Series(False, index=df.index)
-        _dropdup = pd.Series(False, index=df.index)
-        for _key, _grp in df.groupby(mykid_col):
-            if len(_grp) < 2:
-                continue
-            if _grp["Tarikh_Lahir"].nunique(dropna=True) > 1:
-                _placeholder.loc[_grp.index] = True
-            else:
-                _order = _grp.sort_values("Tarikh_Pengukuran", ascending=False)
-                _dropdup.loc[_order.index[1:]] = True
-        if _on("dropped_duplicate_mykid"):
-            stats["dropped_duplicate_mykid"] = int((_dropdup & df["analyzable"]).sum())
-            _exclude(df, _dropdup, "dropped_duplicate_mykid")
-        else:
-            stats["dropped_duplicate_mykid"] = 0
-        if _review_rule_on("review_mykid_shared_placeholder", enabled_rules):
-            _flag(df, _placeholder, "review_mykid_shared_placeholder")
+        _apply_dropped_duplicate_mykid(df, stats, _on, enabled_rules, mykid_col=mykid_col)
     else:
         stats["dropped_duplicate_mykid"] = 0
 
@@ -1084,12 +1178,7 @@ def clean_kpm(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | None
     # Rule 3: Standardize gender (flag RAGU)
     if gender_col:
         df["Jantina_Raw"] = df[gender_col].astype(str).str.upper().str.strip()
-        if _on("dropped_ragu_gender"):
-            _mask = df["Jantina_Raw"] == "RAGU"
-            stats["dropped_ragu_gender"] = int((_mask & df["analyzable"]).sum())
-            _exclude(df, _mask, "dropped_ragu_gender")
-        else:
-            stats["dropped_ragu_gender"] = 0
+        _apply_dropped_ragu_gender(df, stats, _on)
 
         df["Gender"] = df["Jantina_Raw"].map(GENDER_MAP)
         if _on("dropped_invalid_gender"):
@@ -1231,6 +1320,13 @@ def clean_general(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | 
 
     def _on(code: str) -> bool:
         return _rule_on(code, enabled_rules)
+
+    def _optin(code: str) -> bool:
+        # Portable rules absent from general's baseline (EVALUATED_RULES["general"])
+        # fire only when EXPLICITLY enabled — never on the legacy all-on None path.
+        # Guards the documented drop-all failure (e.g. dropped_age_over5 with the
+        # infant 5y cap would otherwise exclude every school-age row by default).
+        return enabled_rules is not None and code in enabled_rules
     df.columns = df.columns.str.strip()
 
     def _norm(s: str) -> str:
@@ -1260,6 +1356,8 @@ def clean_general(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | 
     weight_col = find_col(["berat kg", "berat", "weight"])
     height_col = find_col(["tinggi cm", "tinggi", "panjang", "height", "length"])
     age_col = find_col(["age months", "umur bulan", "age", "umur"])
+    income_col = find_col(["pendapatan", "income"])
+    mykid_col = find_col(["mykid"])
 
     has_age = bool(dob_col and measure_date_col) or bool(age_col)
     coverage = {
@@ -1275,7 +1373,9 @@ def clean_general(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | 
     # Gender (Class A universal): flag rows whose sex is present but unmappable.
     # Never flag on a MISSING column — that is an honest gap, not bad data.
     if gender_col:
-        df["Gender"] = df[gender_col].astype(str).str.upper().str.strip().map(GENDER_MAP)
+        df["Jantina_Raw"] = df[gender_col].astype(str).str.upper().str.strip()
+        _apply_dropped_ragu_gender(df, stats, _optin)
+        df["Gender"] = df["Jantina_Raw"].map(GENDER_MAP)
         if _on("dropped_invalid_gender"):
             _gmask = df["Gender"].isna()
             stats["dropped_invalid_gender"] = int((_gmask & df["analyzable"]).sum())
@@ -1284,10 +1384,29 @@ def clean_general(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | 
             stats["dropped_invalid_gender"] = 0
     else:
         df["Gender"] = None
+        stats["dropped_ragu_gender"] = 0
         stats["dropped_invalid_gender"] = 0
 
+    if income_col:
+        _apply_dropped_pendapatan_x(df, stats, _optin, income_col=income_col)
+    else:
+        stats["dropped_pendapatan_x"] = 0
+
     df["Tarikh_Lahir"] = _parse_date(df[dob_col]) if dob_col else pd.NaT
+    if dob_col:
+        _apply_dropped_null_dob(df, stats, _optin)
+    else:
+        stats["dropped_null_dob"] = 0
+
     df["Tarikh_Ukur"] = _parse_date(df[measure_date_col]) if measure_date_col else pd.NaT
+
+    if mykid_col and dob_col and measure_date_col:
+        _apply_dropped_duplicate_mykid(
+            df, stats, _optin, enabled_rules,
+            mykid_col=mykid_col, sort_date_col="Tarikh_Ukur",
+        )
+    else:
+        stats["dropped_duplicate_mykid"] = 0
 
     both_dates = df["Tarikh_Lahir"].notna() & df["Tarikh_Ukur"].notna()
     age_days = pd.Series(np.nan, index=df.index, dtype="float64")
@@ -1307,17 +1426,10 @@ def clean_general(df: pd.DataFrame, enabled_rules=None, range_overrides: dict | 
     df["Age_Days"] = age_days
     df["Age_Months"] = (df["Age_Days"] / 30.4375).round(2)
 
+    _apply_dropped_age_over5(df, stats, _optin, age_cap=_age_cap)
+
     # Only genuine logical garbage is flagged, and only when both dates exist.
-    bad_date = (
-        df["Tarikh_Lahir"].notna()
-        & df["Tarikh_Ukur"].notna()
-        & (df["Tarikh_Ukur"] < df["Tarikh_Lahir"])
-    )
-    if _on("dropped_date_before_dob"):
-        stats["dropped_date_before_dob"] = int((bad_date & df["analyzable"]).sum())
-        _exclude(df, bad_date, "dropped_date_before_dob")
-    else:
-        stats["dropped_date_before_dob"] = 0
+    _apply_dropped_date_before_dob(df, stats, _on, date_col="Tarikh_Ukur")
 
     df["Berat_kg"] = pd.to_numeric(df[weight_col], errors="coerce") if weight_col else np.nan
     df["Tinggi_cm"] = pd.to_numeric(df[height_col], errors="coerce") if height_col else np.nan
@@ -1662,6 +1774,125 @@ RULE_REGISTRY: dict[str, dict] = {
 LOCKED_RULES: frozenset[str] = frozenset(
     c for c, m in RULE_REGISTRY.items() if m.get("locked")
 )
+
+
+# ── Schema-specific portable drop-rule registry (Phase 5C) ────────────────────
+# Keyed by rule code.  fn/trigger_fn reference the extracted helpers above.
+# trigger_fn expects a PREPARED frame (Tarikh_Lahir, Tarikh_Ukur, Age_Months,
+# Jantina_Raw already derived).  Bilingual labels live in RULE_REGISTRY[code].
+DROP_RULE_REGISTRY: dict[str, dict] = {
+    "dropped_date_before_dob": {
+        "fn": _apply_dropped_date_before_dob,
+        "trigger_fn": _trigger_date_before_dob,
+        "applicable_schemas": ["myvass", "ncdc"],
+    },
+    "dropped_age_over5": {
+        "fn": _apply_dropped_age_over5,
+        "trigger_fn": _trigger_age_over5,
+        "applicable_schemas": ["myvass"],
+    },
+    "dropped_pendapatan_x": {
+        "fn": _apply_dropped_pendapatan_x,
+        "trigger_fn": _trigger_pendapatan_x,
+        "applicable_schemas": ["ncdc"],
+    },
+    "dropped_null_dob": {
+        "fn": _apply_dropped_null_dob,
+        "trigger_fn": _trigger_null_dob,
+        "applicable_schemas": ["ncdc"],
+    },
+    "dropped_duplicate_mykid": {
+        "fn": _apply_dropped_duplicate_mykid,
+        "trigger_fn": _trigger_duplicate_mykid,
+        "applicable_schemas": ["ncdc"],
+    },
+    "dropped_ragu_gender": {
+        "fn": _apply_dropped_ragu_gender,
+        "trigger_fn": _trigger_ragu_gender,
+        "applicable_schemas": ["kpm"],
+    },
+}
+
+
+def _prep_frame_for_triggers(df: pd.DataFrame) -> pd.DataFrame:
+    """Minimal preparation of a raw frame for DROP_RULE_REGISTRY trigger_fns.
+
+    Derives the canonical columns trigger predicates expect (Tarikh_Lahir,
+    Tarikh_Ukur, Age_Months) using the same fuzzy column-finding logic as
+    clean_general.  Non-destructive — operates on a copy; source columns intact."""
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+
+    def _norm(s: str) -> str:
+        return s.lower().replace("_", " ").replace("-", " ")
+
+    def find_col(patterns):
+        for col in df.columns:
+            nc = _norm(col)
+            for p in patterns:
+                if _norm(p) in nc:
+                    return col
+        return None
+
+    dob_col = find_col(["tarikh lahir", "dob", "date of birth", "birth"])
+    measure_date_col = find_col(
+        ["tarikh ukur", "tarikh antropometri", "tarikh pengukuran",
+         "measurement date", "assessment date", "tarikh assessment"]
+    )
+    age_col = find_col(["age months", "umur bulan", "age", "umur"])
+
+    # Only add canonical columns when the source column exists.
+    # Absence of a column (not in df) is the sentinel that trigger_fns use to
+    # return all-False; forcing NaT on every row causes false positives.
+    if dob_col:
+        df["Tarikh_Lahir"] = _parse_date(df[dob_col])
+    if measure_date_col:
+        df["Tarikh_Ukur"] = _parse_date(df[measure_date_col])
+
+    age_days = pd.Series(np.nan, index=df.index, dtype="float64")
+    if "Tarikh_Lahir" in df.columns and "Tarikh_Ukur" in df.columns:
+        both_dates = df["Tarikh_Lahir"].notna() & df["Tarikh_Ukur"].notna()
+        if both_dates.any():
+            age_days = age_days.mask(
+                both_dates, (df["Tarikh_Ukur"] - df["Tarikh_Lahir"]).dt.days
+            )
+    elif age_col:
+        vals = pd.to_numeric(df[age_col], errors="coerce")
+        med = vals.dropna().median() if vals.notna().any() else None
+        if med is not None:
+            age_days = vals * (365.25 if med <= 18 else 30.4375)
+    if age_days.notna().any():
+        df["Age_Months"] = (age_days / 30.4375).round(2)
+    return df
+
+
+def recommend_drop_rules(df: pd.DataFrame) -> list[dict]:
+    """Run every DROP_RULE_REGISTRY trigger_fn against a raw general frame.
+
+    Returns a rule card for each rule that would flag at least one row.
+    Cards carry kind='rule', code, count, applicable_schemas, bilingual labels."""
+    prepared = _prep_frame_for_triggers(df)
+    cards: list[dict] = []
+    for code, entry in DROP_RULE_REGISTRY.items():
+        try:
+            mask = entry["trigger_fn"](prepared)
+        except Exception:
+            continue
+        count = int(mask.sum())
+        if count == 0:
+            continue
+        meta = RULE_REGISTRY.get(code, {})
+        cards.append({
+            "kind": "rule",
+            "code": code,
+            "count": count,
+            "applicable_schemas": entry["applicable_schemas"],
+            "en": meta.get("en", code),
+            "bm": meta.get("bm", code),
+            "rationale_en": meta.get("desc_en", ""),
+            "rationale_bm": meta.get("desc_bm", ""),
+        })
+    return cards
 
 
 def rules_for_source(data_type: str) -> list[dict]:

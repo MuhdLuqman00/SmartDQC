@@ -265,3 +265,29 @@ def test_body_cannot_reenable_persisted_disabled_review(db_session):
     )
     assert "review_daerah_null" not in eff   # persisted disable wins over the body
     assert "dropped_age_over5" in eff         # body's drop selection is preserved
+
+
+# ── Regression: the global all-on fallback must not leak schema-foreign drops ──
+# When the request omits enabled_rules but reviews are managed, the effective set
+# is built from _load_rule_state (every drop code default-on). For a general run
+# that base must be scoped to general's own schema, or the infant-only
+# dropped_age_over5 leaks in and wipes a school-age dataset (the drop-all failure).
+
+def test_general_fallback_does_not_leak_schema_foreign_drop_rule(db_session):
+    # Sparse review disable -> reviews managed; no body rules -> the _load_rule_state
+    # fallback fires. For a general run dropped_age_over5 must be scoped OUT.
+    main._set_setting("cleaning.enabled_rules", {"review_daerah_null": False}, db_session)
+    eff = main._effective_enabled_rules(None, db_session, "general")
+    assert eff is not None
+    assert "dropped_age_over5" not in eff          # schema-foreign -> scoped out
+    assert "dropped_invalid_gender" in eff         # general's own baseline stays
+    assert main._REVIEW_MANAGED_SENTINEL in eff
+
+
+def test_named_cleaner_fallback_keeps_its_own_drop_rules(db_session):
+    # The scoping is per-source: a myvass run's fallback must STILL carry myvass's
+    # own dropped_age_over5 (it IS myvass schema) — the general fix doesn't over-reach.
+    main._set_setting("cleaning.enabled_rules", {"review_daerah_null": False}, db_session)
+    eff = main._effective_enabled_rules(None, db_session, "myvass")
+    assert "dropped_age_over5" in eff              # myvass schema keeps it
+    assert "dropped_invalid_gender" in eff

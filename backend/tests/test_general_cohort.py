@@ -152,3 +152,21 @@ def test_general_invalid_gender_flagged_out():
     assert bool(out.loc[0, "analyzable"]) is False
     assert "dropped_invalid_gender" in out.loc[0, "exclude_reason"]
     assert len(out) == 3
+
+
+def test_general_default_path_does_not_drop_all_school_age():
+    """Phase 5C regression guard: portable rules absent from general's baseline
+    (dropped_age_over5 with the infant 5y cap, in particular) must NOT fire on the
+    default enabled_rules=None path. The earlier len(out)/notna() assertions were
+    blind to `analyzable`, so the drop-all (every school-age row excluded ->
+    final_count 0) passed unnoticed. Assert on analyzable / final_count directly."""
+    out, stats = clean_general(_school_df())          # enabled_rules=None (default)
+    assert stats["cohort"] == "school"
+    assert stats["dropped_age_over5"] == 0             # the regression: was 3
+    assert int(out["analyzable"].sum()) == 3           # no row silently excluded
+    assert stats["final_count"] == 3                   # the drop-all guard
+    # The portable rules report a clean zero, never an exclusion, by default.
+    for code in ("dropped_age_over5", "dropped_pendapatan_x", "dropped_null_dob",
+                 "dropped_duplicate_mykid", "dropped_ragu_gender"):
+        assert stats[code] == 0
+    assert out["exclude_reason"].eq("").all()

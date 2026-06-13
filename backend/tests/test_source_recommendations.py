@@ -106,8 +106,9 @@ def test_detect_type_recommends_reroute_for_general_myvass(client):
     data = r.json()
     assert data["detected_type"] == "general"
     recs = data["recommendations"]
-    assert len(recs) == 1, f"expected exactly one card, got {recs}"
-    rec = recs[0]
+    reroute_cards = [r for r in recs if r["kind"] == "reroute"]
+    assert len(reroute_cards) == 1, f"expected exactly one reroute card, got {recs}"
+    rec = reroute_cards[0]
     assert rec["kind"] == "reroute"
     assert rec["type"] == "myvass"
     assert rec["matched_count"] >= 1
