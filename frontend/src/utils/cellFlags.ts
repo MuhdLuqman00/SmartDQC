@@ -1,6 +1,9 @@
 // Phase 4: thresholds sourced from GET /config/clinical-ranges at runtime.
 // Consumers fetch once on mount and pass a ClinicalThresholds object.
 // DEFAULT_CELL_THRESHOLDS is the fallback (same values as the registry defaults).
+// Parity with the backend registry is enforced by
+// backend/tests/test_cellflags_registry_parity.py — that test fails loudly if
+// these values drift from clinical_ranges.RANGES, so keep them in sync.
 
 import type React from 'react';
 
@@ -32,9 +35,15 @@ export const DEFAULT_CELL_THRESHOLDS: ClinicalThresholds = {
   bmiObese:             18.5,
 };
 
-// Date bounds — BR-09 logic, not a registry-backed range threshold
-const DATE_EARLIEST_MS = new Date('2008-01-01').getTime();
-const DATE_LATEST_MS   = new Date('2026-12-31').getTime();
+// Date bounds — mirrors backend BR-09 (kkm_quality_rules.py): a measurement date
+// more than br09_date_window_years (20) old, or in the future, is a system/entry
+// error. Anchored to the runtime clock so these never go stale (the old hardcoded
+// 2008–2026 window silently expired each year). Latest = end of the current year
+// for same-year/clock-skew tolerance.
+const BR09_WINDOW_YEARS = 20;
+const _now = new Date();
+const DATE_EARLIEST_MS = new Date(_now.getFullYear() - BR09_WINDOW_YEARS, 0, 1).getTime();
+const DATE_LATEST_MS   = new Date(_now.getFullYear(), 11, 31, 23, 59, 59).getTime();
 
 function isMissing(v: unknown): boolean {
   return v == null || v === '' || v === 'null' || v === 'None' || v === 'nan';
