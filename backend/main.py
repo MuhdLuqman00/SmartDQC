@@ -2131,19 +2131,9 @@ async def quality_check_endpoint(
     # B2.1: prominent, actionable business-rule findings (future dates, dupes,
     # impossible measurements, …) computed on the raw frame — PII-free.
     # Forward global clinical-range overrides so BR-02/BR-03 bounds reflect Settings.
-    # Loaded via the app-global session (not a Depends) so the endpoint signature
-    # stays db-free; SessionLocal is None before lifespan runs → defaults apply.
-    from .db.init_db import SessionLocal as _qc_SessionLocal
-    _qc_overrides: dict = {}
-    if _qc_SessionLocal is not None:
-        _qc_db = _qc_SessionLocal()
-        try:
-            _qc_overrides = _load_clinical_range_overrides(_qc_db)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Clinical-range overrides unavailable for quality-check: %s", exc)
-        finally:
-            _qc_db.close()
-    quality["actionable_findings"] = _actionable_findings(df, range_overrides=_qc_overrides)
+    quality["actionable_findings"] = _actionable_findings(
+        df, range_overrides=_global_range_overrides()
+    )
 
     return JSONResponse(content=json_safe(quality))
 
@@ -2421,7 +2411,9 @@ async def clean_preview_impact(
     )
     rows_before = len(df)
     try:
-        cleaned_df, stats = clean_data(df, effective_type, enabled)
+        cleaned_df, stats = clean_data(
+            df, effective_type, enabled, range_overrides=_global_range_overrides() or None
+        )
     except Exception as e:
         raise HTTPException(500, f"Preview error: {str(e)}")
     _rule_codes = EVALUATED_RULES.get(effective_type, EVALUATED_RULES["general"])
@@ -2468,7 +2460,7 @@ async def clean_download_endpoint(
         raise HTTPException(400, str(e))
 
     try:
-        cleaned_df, stats = clean_data(df, data_type)
+        cleaned_df, stats = clean_data(df, data_type, range_overrides=_global_range_overrides() or None)
     except Exception as e:
         raise HTTPException(500, f"Cleaning error: {str(e)}")
 
@@ -2604,7 +2596,7 @@ async def clean_run_multi_endpoint(
         raise HTTPException(400, str(e))
 
     try:
-        cleaned_df, stats = clean_data(merged, data_type)
+        cleaned_df, stats = clean_data(merged, data_type, range_overrides=_global_range_overrides() or None)
     except Exception as e:
         raise HTTPException(500, f"Cleaning error: {str(e)}")
 
@@ -2655,7 +2647,7 @@ async def clean_download_multi_endpoint(
         raise HTTPException(400, str(e))
 
     try:
-        cleaned_df, stats = clean_data(merged, data_type)
+        cleaned_df, stats = clean_data(merged, data_type, range_overrides=_global_range_overrides() or None)
     except Exception as e:
         raise HTTPException(500, f"Cleaning error: {str(e)}")
 
@@ -5464,6 +5456,27 @@ def _set_setting(key: str, value, db) -> None:
 
 def _load_clinical_range_overrides(db) -> dict:
     return _get_setting("clinical.ranges", {}, db) or {}
+
+
+def _global_range_overrides() -> dict:
+    """Global clinical-range overrides from Settings, loaded via the app-global
+    session so endpoints without a ``db`` dependency can still honour them.
+
+    Returns ``{}`` (registry defaults apply) when persistence is unavailable —
+    before lifespan runs (SessionLocal is None) or on any DB error. Defensive:
+    a settings-read failure must never break a clean/download request.
+    """
+    from .db.init_db import SessionLocal
+    if SessionLocal is None:
+        return {}
+    _db = SessionLocal()
+    try:
+        return _load_clinical_range_overrides(_db)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Clinical-range overrides unavailable; using defaults: %s", exc)
+        return {}
+    finally:
+        _db.close()
 
 
 @app.get("/settings/thresholds")
