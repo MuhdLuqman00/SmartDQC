@@ -225,7 +225,7 @@ export function DatasetLibraryPage() {
                   </table>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-                      {t('Change (latest vs earliest)', 'Perubahan (terkini vs terawal)')}
+                      {t('Change (latest vs earliest)', 'Perubahan (terkini lwn terawal)')}
                     </div>
                     <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                       <thead><tr>

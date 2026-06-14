@@ -530,7 +530,7 @@ export function DashboardPage() {
       }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '14px 18px 2px' }}>
           <span className="kkm-keyline" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-            {t('Indicators vs Target', 'Penunjuk vs Sasaran')}
+            {t('Indicators vs Target', 'Penunjuk lwn Sasaran')}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             {t('Select an indicator to update the map below', 'Pilih penunjuk untuk kemas kini peta di bawah')}
@@ -622,7 +622,7 @@ export function DashboardPage() {
                       the negative side uses --warning (also ≥4.5:1 as text, which
                       the coral fill token is not). */}
                   <div style={{ fontSize: 12, fontWeight: 600, color: isBad ? 'var(--warning)' : 'var(--success)' }}>
-                    {ind.gap > 0 ? '▲' : '▼'} {Math.abs(Number(ind.gap)).toFixed(2)} {t('vs target', 'vs sasaran')}
+                    {ind.gap > 0 ? '▲' : '▼'} {Math.abs(Number(ind.gap)).toFixed(2)} {t('vs target', 'lwn sasaran')}
                   </div>
                 </button>
               );

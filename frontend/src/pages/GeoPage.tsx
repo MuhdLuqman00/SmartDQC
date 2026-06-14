@@ -501,7 +501,7 @@ export function GeoPage() {
         {kpi && kpi.indicators.length > 0 && (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-card)', padding: '18px 20px', boxShadow: 'var(--shadow-card)', marginTop: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
-              {t('Indicators vs National Target', 'Penunjuk vs Sasaran Kebangsaan')}
+              {t('Indicators vs National Target', 'Penunjuk lwn Sasaran Kebangsaan')}
             </div>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={kpi.indicators.map(i => ({
