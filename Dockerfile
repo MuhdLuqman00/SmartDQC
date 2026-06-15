@@ -10,7 +10,9 @@ COPY alembic.ini ./alembic.ini
 COPY alembic/ ./alembic/
 COPY scripts/entrypoint.sh ./entrypoint.sh
 
-RUN chmod +x ./entrypoint.sh
+# Strip any CRLF so the shebang resolves even when the repo is checked out with
+# Windows line endings (build host may have core.autocrlf=true). See .gitattributes.
+RUN sed -i 's/\r$//' ./entrypoint.sh && chmod +x ./entrypoint.sh
 
 ENV WHO_ZSCORE_DIR=/app/data/zscore
 ENV OLLAMA_BASE_URL=http://ollama:11434
