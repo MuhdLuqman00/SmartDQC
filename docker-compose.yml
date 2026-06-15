@@ -27,8 +27,10 @@ services:
     image: luqmanzulkefli/smartdqc-api:latest
     ports:
       - "8000:8000"
-    volumes:
-      - ./data:/app/data
+    # No ./data mount: the WHO z-score tables are baked into the image
+    # (Dockerfile COPYs data/zscore/), and nothing else uses /app/data. Mounting
+    # the host ./data here would shadow the baked tables and silently empty the
+    # z-scores if the host folder were missing them.
     environment:
       - WHO_ZSCORE_DIR=/app/data/zscore
       # Default targets the bundled `ollama` service below. For a split

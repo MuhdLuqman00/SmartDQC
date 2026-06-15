@@ -124,18 +124,16 @@ All values in `.env` have sensible defaults for a local setup. No changes are re
 > **Auth model:** SmartDQC uses name-based sessions — users identify themselves by typing a name, which the frontend sends as an `X-User` header. There is no password login. `JWT_SECRET` and `ADMIN_SEED_PASSWORD` are legacy variables retained for backwards compatibility and do not affect day-to-day operation.
 
 ```bash
-# 3. Create the z-score folder and place the 6 WHO Excel files inside it
-mkdir -p data/zscore
-# Copy your 6 WHO .xlsx files into data/zscore/
-
-# 4. Start all services
+# 3. Start all services
 docker compose up -d
 
-# 5. On first run, the AI model is downloaded from the Ollama registry (~3 GB).
+# 4. On first run, the AI model is downloaded from the Ollama registry (~3 GB).
 # This takes several minutes depending on your connection. Watch progress with:
 docker compose logs -f ollama-init
 # You will see "Model ready." when the download is complete
 ```
+
+> **No z-score file setup needed.** The api image already includes the WHO 2006 z-score tables baked in at build time, so there is nothing to copy onto the host. (Placing files in `data/zscore/` is only needed when *building* the image from source or running Option C.)
 
 ### Access
 
