@@ -143,7 +143,7 @@ def _is_biv(z, indicator: str) -> bool:
 # a cutpoint changes reported prevalence — treat as fixed unless deliberately re-basing.
 def classify_waz(z):
     """Weight-for-Age Z-score classification (KKM / WHO 2006)."""
-    if z is None:        return None
+    if pd.isna(z):       return None
     if z < -3:           return "kurang_berat_badan_teruk"
     if z < -2:           return "kurang_berat_badan"
     if z < -1:           return "risiko_kurang_berat_badan"
@@ -152,7 +152,7 @@ def classify_waz(z):
 
 def classify_haz(z):
     """Height/Length-for-Age Z-score classification (KKM / WHO 2006)."""
-    if z is None:        return None
+    if pd.isna(z):       return None
     if z < -3:           return "bantut_teruk"
     if z < -2:           return "bantut"
     if z < -1:           return "risiko_bantut"
@@ -161,7 +161,7 @@ def classify_haz(z):
 
 def classify_baz(z):
     """BMI-for-Age Z-score classification (KKM / WHO 2006)."""
-    if z is None:        return None
+    if pd.isna(z):       return None
     if z < -3:           return "susut_teruk"
     if z < -2:           return "susut"
     if z < -1:           return "berisiko_susut"

@@ -151,11 +151,30 @@ def build_chart_blocks(df: pd.DataFrame, source_type: str = None) -> dict:
                 "ind_kurang_berat_label", "ind_susut_label"]
     active_ind = [c for c in ind_cols if c in df.columns]
 
+    # Per-indicator assessable denominator: the count of children for whom
+    # THIS indicator could actually be computed. The ind_* flag columns are
+    # booleans (False — never null — when not assessable), so counting them
+    # just yields all rows and is useless as a denominator. The WHO class
+    # columns ARE null when the z-score can't be computed, so their non-null
+    # count is the true denominator; fall back to the source status label for
+    # label-only schemas. This lets the frontend show an exact per-indicator
+    # prevalence instead of dividing every indicator by the same n_total.
+    _denom_sources = {
+        "bantut":       ["haz_class", "status_tinggi_norm", "status_tinggi"],
+        "kurang_berat": ["waz_class", "status_berat_norm", "status_berat"],
+        "susut":        ["baz_class", "status_bmi_norm", "status_bmi"],
+        "obes":         ["baz_class", "status_bmi_norm", "status_bmi"],
+    }
+
     if "tahun_ukur" in df.columns and active_ind:
         agg_dict: dict = {"n_total": (active_ind[0], "count")}
         for ic in active_ind:
             short = ic.replace("_zscore", "").replace("_label", "").replace("ind_", "")
             agg_dict[short] = (ic, "sum")
+            denom_col = next(
+                (c for c in _denom_sources.get(short, []) if c in df.columns), None)
+            if denom_col is not None:
+                agg_dict[f"{short}_n"] = (denom_col, "count")
         grp = df.groupby("tahun_ukur").agg(**agg_dict).reset_index()
         charts["trend_by_year"] = grp.replace({np.nan: None}).to_dict(orient="records")
 

@@ -1,6 +1,6 @@
 import React, { useId } from 'react';
 import {
-  ComposedChart, Line, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
+  ComposedChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
 } from 'recharts';
 import { ChartTooltip } from './ChartTooltip';
 
@@ -13,7 +13,8 @@ import { ChartTooltip } from './ChartTooltip';
    Each indicator gets a distinct categorical color from the
    `--chart-N` ramp (no more two-colour amber/red wall) plus a soft
    area-gradient under its line so the trend is visible even when the
-   series cross. */
+   series cross. Values are converted to prevalence % (count / n_total
+   × 100) before plotting so the y-axis reflects real health rates. */
 
 interface Props {
   title: string;
@@ -32,9 +33,30 @@ const DEFAULT_SERIES = [
 
 export function TrendLineCard({ title, data, series = DEFAULT_SERIES, lang }: Props): JSX.Element {
   const gradId = useId().replace(/:/g, '');
-  const rows: Record<string, unknown>[] = (data || [])
+  const rawRows: Record<string, unknown>[] = (data || [])
     .filter(d => d && d.tahun_ukur != null)
     .map(d => ({ ...d, tahun_ukur: String(d.tahun_ukur) }));
+
+  // Convert raw counts to prevalence % (count / denominator * 100). The backend
+  // emits a per-indicator denominator `{key}_n` = children for whom that
+  // indicator was assessable, which is the epidemiologically correct base; we
+  // fall back to `n_total` (all measured children) for older payloads that
+  // predate the per-indicator field. Guard a 0/non-numeric denominator → null
+  // so the existing empty-state logic still fires.
+  const asPositive = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+  const rows = rawRows.map(r => {
+    const total = asPositive(r.n_total);
+    const out: Record<string, unknown> = { ...r };
+    for (const s of series) {
+      const denom = asPositive(r[`${s.key}_n`]) ?? total;
+      const raw = r[s.key];
+      out[s.key] = (denom !== null && typeof raw === 'number' && Number.isFinite(raw))
+        ? (raw / denom) * 100
+        : null;
+    }
+    return out;
+  });
 
   // Keep a series if it has any numeric value (incl. all-zeros) — the
   // distinction "no cases this period" vs "key not in payload" matters,
@@ -91,11 +113,14 @@ export function TrendLineCard({ title, data, series = DEFAULT_SERIES, lang }: Pr
           />
           <YAxis
             tick={{ fontSize: 10, fill: 'var(--chart-axis)' }}
-            allowDecimals={false}
+            tickFormatter={v => `${v}%`}
             tickLine={false}
             axisLine={false}
           />
-          <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--chart-grid)', strokeWidth: 1 }} />
+          <Tooltip
+            content={<ChartTooltip valueFormatter={v => `${Number(v).toFixed(1)}%`} />}
+            cursor={{ stroke: 'var(--chart-grid)', strokeWidth: 1 }}
+          />
           <Legend
             verticalAlign="bottom" height={28} iconType="circle" iconSize={8}
             wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }}
@@ -105,20 +130,10 @@ export function TrendLineCard({ title, data, series = DEFAULT_SERIES, lang }: Pr
               key={`area-${s.key}`}
               type="monotone"
               dataKey={s.key}
-              stroke="none"
-              fill={`url(#trend-${gradId}-${i})`}
-              isAnimationActive={false}
-              legendType="none"
-            />
-          ))}
-          {activeSeries.map(s => (
-            <Line
-              key={`line-${s.key}`}
-              type="monotone"
-              dataKey={s.key}
               name={lang === 'en' ? s.labelEn : s.labelBm}
               stroke={s.color}
               strokeWidth={2.5}
+              fill={`url(#trend-${gradId}-${i})`}
               dot={{ r: 3, fill: s.color, stroke: 'var(--surface)', strokeWidth: 1.5 }}
               activeDot={{ r: 6, fill: s.color, stroke: 'var(--surface)', strokeWidth: 2 }}
               isAnimationActive={false}
