@@ -2,7 +2,7 @@
 # in one container). Mirrors the working manual run:
 #
 #   docker run -d -p 8000:8000 -p 8080:80 --name smartdqc \
-#       luqmanzulkefli/smartdqc-standalone:v3.2-qwen35
+#       luqmanzulkefli/smartdqc-standalone:v3.10
 #
 # but lets you change the LLM model without editing this file — just edit the
 # .env next to it (copy from .env.standalone.example) or pass it inline:
@@ -15,7 +15,7 @@
 
 services:
   smartdqc:
-    image: luqmanzulkefli/smartdqc-standalone:v3.2-qwen35
+    image: luqmanzulkefli/smartdqc-standalone:v3.10
     container_name: smartdqc
     ports:
       - "8000:8000"   # backend API

@@ -31,7 +31,10 @@ services:
       - ./data:/app/data
     environment:
       - WHO_ZSCORE_DIR=/app/data/zscore
-      - OLLAMA_BASE_URL=http://ollama:11434
+      # Default targets the bundled `ollama` service below. For a split
+      # deployment (LLM on a separate GPU host) set OLLAMA_BASE_URL in .env to
+      # http://<gpu-host>:11434 and start only postgres+api+frontend (see below).
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e4b-it-qat}
       - OLLAMA_THINK=${OLLAMA_THINK:-false}
       # Keep the model resident (no post-idle unload/CPU fallback); "-1" =
@@ -44,8 +47,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_started
     restart: unless-stopped
 
   frontend:
@@ -56,6 +57,10 @@ services:
       - api
     restart: unless-stopped
 
+  # Bundled local LLM (default) — runs on the host GPU via the reservation
+  # below. SPLIT DEPLOYMENT: skip this service by starting only the others —
+  #   docker compose up -d postgres api frontend
+  # — and point OLLAMA_BASE_URL at the external GPU host in .env.
   ollama:
     image: ollama/ollama
     ports:
@@ -71,6 +76,8 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
+  # Pulls the model into the bundled ollama on first boot. Started together with
+  # `ollama` by default; skipped automatically in the split start command above.
   ollama-init:
     image: curlimages/curl:latest
     depends_on:
