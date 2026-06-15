@@ -49,6 +49,8 @@ LEARNING_SUMMARY.*
 # Logs & dev scratch
 *.log
 phase2-login-*.png
+# Technical Design Document (.docx) editing scratch — unzipped docx + helper scripts
+.tdd_*/
 
 # Local model weights — too large for git, baked into Docker at build time
 model/*.gguf
