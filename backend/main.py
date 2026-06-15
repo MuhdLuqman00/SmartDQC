@@ -5,6 +5,7 @@ All endpoints. Business logic lives in backend/eda/, backend/cleaning/, and back
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -5198,7 +5199,7 @@ async def entity_link_v2(req: EntityLinkV2Request):
     Returns matched child profiles with a 0-1 confidence score and
     explanation chips (exact_ic / fuzzy_ic±N / name+dob / unmatched).
     """
-    result = _run_v2_linkage(req)
+    result = await asyncio.to_thread(_run_v2_linkage, req)
     _log_audit(
         action="entity.link.v2",
         detail=(
@@ -5216,7 +5217,7 @@ async def entity_link_v2(req: EntityLinkV2Request):
 async def entity_link_v2_export(req: EntityLinkV2Request):
     """Return the v2 linkage result as a CSV download — one row per
     (group, source) pair so analysts can pivot on confidence and reasons."""
-    result = _run_v2_linkage(req)
+    result = await asyncio.to_thread(_run_v2_linkage, req)
     import csv
     import io
 
