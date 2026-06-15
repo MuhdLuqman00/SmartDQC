@@ -431,8 +431,8 @@ export function UploadPage() {
                 <option value="general">{t('Other / General', 'Lain-lain / Umum')}</option>
               </select>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-                {t('Leave on Auto-detect unless detection picks the wrong schema. "Other" maps columns by best match across all schemas.',
-                   'Biarkan pada Auto-kesan melainkan pengesanan salah. "Lain-lain" memetakan lajur mengikut padanan terbaik merentas semua skema.')}
+                {t('Leave on Auto-detect unless detection picks the wrong schema. NCDC looks identical to MyVASS, so select it here if your file is NCDC. "Other" maps columns by best match across all schemas.',
+                   'Biarkan pada Auto-kesan melainkan pengesanan salah. NCDC kelihatan sama dengan MyVASS, jadi pilih di sini jika fail anda ialah NCDC. "Lain-lain" memetakan lajur mengikut padanan terbaik merentas semua skema.')}
               </p>
             </div>
           )}
@@ -541,8 +541,8 @@ export function UploadPage() {
               {t('Recognised schemas', 'Skema dikenali')}
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              {t('MyVASS, NCDC and KPM are detected automatically — pick one manually only if detection is wrong.',
-                 'MyVASS, NCDC dan KPM dikesan secara automatik — pilih secara manual hanya jika pengesanan salah.')}
+              {t('MyVASS and KPM are detected automatically. NCDC shares MyVASS’s columns, so pick it manually if your file is NCDC.',
+                 'MyVASS dan KPM dikesan secara automatik. NCDC berkongsi lajur yang sama dengan MyVASS, jadi pilih secara manual jika fail anda ialah NCDC.')}
             </p>
           </div>
 
