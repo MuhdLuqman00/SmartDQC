@@ -64,6 +64,16 @@ function isDateCol(col: string): boolean {
   return col.toLowerCase().includes('tarikh');
 }
 
+// Provenance / status columns written by the cleaning engine (exclude_reason,
+// review_reason, *_reason, internal _-prefixed cols). Their semantics are
+// INVERTED from a measurement: an empty cell means "row was kept / needs no
+// review" — the healthy state — so it must never be flagged as a missing value.
+// A filled cell carries the drop/review label and is rendered as plain text.
+export function isProvenanceCol(col: string): boolean {
+  const c = col.toLowerCase();
+  return c.startsWith('_') || c === 'exclude_reason' || c === 'review_reason' || c.endsWith('_reason');
+}
+
 /**
  * Classify a cell value as 'danger', 'warn', or 'ok'.
  * Pass live thresholds fetched from GET /config/clinical-ranges for accuracy.
@@ -73,6 +83,7 @@ export function classifyCell(
   value: unknown,
   thresholds: ClinicalThresholds = DEFAULT_CELL_THRESHOLDS,
 ): CellFlag {
+  if (isProvenanceCol(col)) return 'ok';   // empty = row kept / no review needed (good)
   if (isMissing(value)) return 'warn';
 
   if (isBeratCol(col)) {
@@ -125,6 +136,7 @@ export function describeCell(
   value: unknown,
   thresholds: ClinicalThresholds = DEFAULT_CELL_THRESHOLDS,
 ): CellReason | null {
+  if (isProvenanceCol(col)) return null;   // status column — empty is the healthy state
   if (isMissing(value)) {
     return {
       flag: 'warn',
